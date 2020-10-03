@@ -1,20 +1,11 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 use rocket::State;
 use rocket_contrib::json::Json;
-use rodio::{source::Done, Sample, Sink, Source};
-use rustfft::num_complex::Complex;
-use rustfft::num_traits::Zero;
-use rustfft::FFTplanner;
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::VecDeque, ffi::OsStr, ffi::OsString, fs::File, sync::Arc, sync::Mutex, thread,
-    time,
-};
-use std::{io::BufReader, path::Path, path::PathBuf, sync::atomic::AtomicUsize};
-use synthrs::{
-    filter::{cutoff_from_frequency, lowpass_filter},
-    sample,
-};
+use rodio::{Sink, Source};
+
+use std::{ffi::OsStr, fs::File, sync::Arc, sync::Mutex, thread, time};
+use std::{io::BufReader, path::Path, path::PathBuf};
+
 use time::{Duration, Instant};
 mod filtered_source;
 use chrono::{DateTime, Utc};
@@ -28,10 +19,6 @@ extern crate rocket;
 fn frquency_cutoff_lp(t: f32) -> f32 {
     let clamped_t = (t - 10.0).max(0.0);
     100000.0f32.min(800.0 + clamped_t.powf(2.5) * 1.0)
-}
-
-fn reverb_balance(t: f32) -> f32 {
-    0.5 / (t * 0.03 + 1.0)
 }
 
 fn volume(t: f32) -> f32 {
@@ -107,7 +94,7 @@ fn start_server(alarm_state: AlarmState) {
 }
 
 fn play(path: &PathBuf, alarm_state: &AlarmState) {
-    let (stream, handle) = rodio::OutputStream::try_default().unwrap();
+    let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
 
     let sink = Sink::try_new(&handle).unwrap();
 
@@ -184,7 +171,7 @@ fn start_alarm_thread(alarm_state: AlarmState) {
                 Ok(path) => {
                     println!("Playing {}", path.to_str().unwrap());
                     play(&path, &alarm_state)
-                },
+                }
                 Err(e) => {
                     println!("{}", e);
                     alarm_state.disable();

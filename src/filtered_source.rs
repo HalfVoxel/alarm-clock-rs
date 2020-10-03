@@ -1,14 +1,8 @@
-use rodio::{Sample, Sink, Source};
-use rustfft::num_complex::Complex;
-use rustfft::num_traits::Zero;
-use rustfft::FFTplanner;
-use std::io::BufReader;
-use std::{collections::VecDeque, fs::File, sync::Arc, sync::Mutex, thread, time};
-use synthrs::{
-    filter::{cutoff_from_frequency, lowpass_filter},
-    sample,
-};
-use time::{Duration, Instant};
+use rodio::{Sample, Source};
+
+use std::{sync::Arc, sync::Mutex, time};
+use synthrs::filter::{cutoff_from_frequency, lowpass_filter};
+use time::Duration;
 
 /// Internal function that builds a `FilteredSource` object.
 pub fn dynamic_filter<I>(input: I) -> (FilteredSource<I>, Controller)
@@ -94,7 +88,6 @@ pub fn convolve(filter: &[f32], input: &[f32], output: &mut [f32]) {
     }
 }
 
-
 pub fn convolve_f64(filter: &[f64], input: &[f64], output: &mut [f64]) {
     assert_eq!(output.len(), input.len() - filter.len(), "output size are only the inner valid samples. filter.len()/2 samples on each side are skipped.");
     assert_eq!(filter.len() % 2, 0, "filter must have an even length");
@@ -156,9 +149,7 @@ where
 
             let buffer = &mut self.current_buffer;
             buffer.resize(input_samples.len() - lowpass.len(), 0.0);
-            let t1 = Instant::now();
             convolve(&lowpass, &input_samples, buffer);
-            let t2 = Instant::now();
 
             for s in buffer {
                 *s *= settings.volume;
