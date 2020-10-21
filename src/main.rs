@@ -94,9 +94,11 @@ fn start_server(alarm_state: AlarmState) {
 }
 
 fn play(path: &PathBuf, alarm_state: &AlarmState) {
-    let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
+    // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
+    let device = rodio::default_output_device().unwrap();
 
-    let sink = Sink::try_new(&handle).unwrap();
+    // let sink = Sink::try_new(&handle).unwrap();
+    let sink = Sink::new(&device);
 
     // Add a dummy source of the sake of the example.
     let file = File::open(path).unwrap();
