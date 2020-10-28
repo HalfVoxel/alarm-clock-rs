@@ -73,7 +73,7 @@ fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
 #[post("/store", data = "<info>")]
 fn store(info: Json<AlarmInfo>, state: State<AlarmState>) {
     let mut state = state.inner.lock().unwrap();
-    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
+    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S").expect("Could not parse date");
     state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
     println!(
         "Set alarm to {} which is {} minutes into the future",
@@ -133,6 +133,7 @@ fn play(path: &PathBuf, alarm_state: &AlarmState) {
         let freq = frquency_cutoff_lp(t);
         controller.set_volume(volume(t) as f64 * fadeout(t_fadeout, fadeout_duration) as f64);
         controller.set_lowpass(freq as f64);
+        thread::sleep(Duration::from_millis(40));
     }
 
     controller.set_volume(0.0);
