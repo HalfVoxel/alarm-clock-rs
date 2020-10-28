@@ -71,7 +71,7 @@ fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
 }
 
 #[post("/store", data = "<info>")]
-fn store(info: Json<AlarmInfo>, state: State<AlarmState>) {
+fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
     let mut state = state.inner.lock().unwrap();
     let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
     state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
@@ -84,6 +84,8 @@ fn store(info: Json<AlarmInfo>, state: State<AlarmState>) {
             .num_minutes()
     );
     state.enabled = info.enabled;
+
+    return get_info();
 }
 
 fn start_server(alarm_state: AlarmState) {
