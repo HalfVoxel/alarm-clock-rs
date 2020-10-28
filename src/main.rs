@@ -85,7 +85,7 @@ fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
     );
     state.enabled = info.enabled;
 
-    return get_info();
+    return get_info(state);
 }
 
 fn start_server(alarm_state: AlarmState) {
