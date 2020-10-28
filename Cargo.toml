@@ -24,3 +24,6 @@ thiserror = "1.0"
 version = "0.4.5"
 default-features = false
 features = ["json"]
+
+[profile.release]
+panic = "abort"

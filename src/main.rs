@@ -12,6 +12,8 @@ use chrono::{DateTime, Utc};
 use filtered_source::dynamic_filter;
 use rand::prelude::*;
 use thiserror::Error;
+use chrono::NaiveDateTime;
+use chrono::TimeZone;
 
 #[macro_use]
 extern crate rocket;
@@ -60,7 +62,7 @@ struct AlarmInfo {
     enabled: bool,
 }
 
-#[get("/get")]
+#[post("/get")]
 fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
     let state = state.inner.lock().unwrap();
     Json(AlarmInfo {
@@ -72,9 +74,8 @@ fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
 #[post("/store", data = "<info>")]
 fn store(info: Json<AlarmInfo>, state: State<AlarmState>) {
     let mut state = state.inner.lock().unwrap();
-    state.next_alarm = DateTime::parse_from_rfc3339(&info.time)
-        .expect("Could not parse date")
-        .into();
+    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
+    state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
     println!(
         "Set alarm to {} which is {} minutes into the future",
         state.next_alarm,
