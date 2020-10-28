@@ -125,6 +125,7 @@ where
             let lowpass = &mut settings.lowpass;
 
             if lowpass.is_empty() || self.sample_count > self.last_lowpass_recalculation + 8192 {
+                self.last_lowpass_recalculation = self.sample_count;
                 println!("Recalculating lowpass at t={}", t);
                 let freq = (self.lowpass_freq)(t);
                 let lowpass64 = lowpass_filter(
