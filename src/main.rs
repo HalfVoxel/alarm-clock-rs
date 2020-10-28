@@ -13,7 +13,6 @@ use filtered_source::dynamic_filter;
 use rand::prelude::*;
 use thiserror::Error;
 use chrono::NaiveDateTime;
-use chrono::TimeZone;
 
 #[macro_use]
 extern crate rocket;
@@ -66,7 +65,7 @@ struct AlarmInfo {
 fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
     let state = state.inner.lock().unwrap();
     Json(AlarmInfo {
-        time: state.next_alarm.to_rfc3339(),
+        time: state.next_alarm.format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
         enabled: state.enabled,
     })
 }
