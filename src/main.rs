@@ -8,11 +8,13 @@ use std::{io::BufReader, path::Path, path::PathBuf};
 
 use time::{Duration, Instant};
 mod filtered_source;
+mod precalculated_source;
 use chrono::{DateTime, Utc};
 use filtered_source::dynamic_filter;
 use rand::prelude::*;
 use thiserror::Error;
 use chrono::NaiveDateTime;
+use precalculated_source::PrecalculatedSource;
 
 #[macro_use]
 extern crate rocket;
@@ -108,7 +110,8 @@ fn play(path: &PathBuf, alarm_state: &AlarmState) {
     let file = File::open(path).unwrap();
     let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
-    let (source, controller) = dynamic_filter(source.convert_samples());
+    let (source, controller) = dynamic_filter(source.convert_samples(), Box::new(|t| frquency_cutoff_lp(t as f32) as f64));
+    let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
     let alarm_timeout = 120.0;
@@ -120,9 +123,10 @@ fn play(path: &PathBuf, alarm_state: &AlarmState) {
             break;
         }
 
-        let freq = frquency_cutoff_lp(t);
-        controller.set_lowpass(freq as f64);
-        controller.set_volume(volume(t) as f64);
+        // let freq = frquency_cutoff_lp(t);
+        // controller.set_lowpass(freq as f64);
+        // controller.set_volume();
+        sink.set_volume(volume(t));
         thread::sleep(Duration::from_millis(40));
     }
 
@@ -134,9 +138,9 @@ fn play(path: &PathBuf, alarm_state: &AlarmState) {
         if t_fadeout >= fadeout_duration {
             break;
         }
-        let freq = frquency_cutoff_lp(t);
-        controller.set_volume(volume(t) as f64 * fadeout(t_fadeout, fadeout_duration) as f64);
-        controller.set_lowpass(freq as f64);
+        // let freq = frquency_cutoff_lp(t);
+        sink.set_volume(volume(t) * fadeout(t_fadeout, fadeout_duration));
+        // controller.set_lowpass(freq as f64);
         thread::sleep(Duration::from_millis(40));
     }
 

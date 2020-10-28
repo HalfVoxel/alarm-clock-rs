@@ -5,7 +5,7 @@ use synthrs::filter::{cutoff_from_frequency, lowpass_filter};
 use time::Duration;
 
 /// Internal function that builds a `FilteredSource` object.
-pub fn dynamic_filter<I>(input: I) -> (FilteredSource<I>, Controller)
+pub fn dynamic_filter<I>(input: I, lowpass_freq: Box<dyn Fn(f64)->f64 + Send + Sync>) -> (FilteredSource<I>, Controller)
 where
     I: Source<Item = f32>,
 {
@@ -20,6 +20,9 @@ where
         current_buffer_index: 0,
         input_buffer: vec![],
         trailing_samples: vec![],
+        lowpass_freq,
+        sample_count: 0,
+        last_lowpass_recalculation: 0,
     };
 
     let controller = Controller {
@@ -27,7 +30,7 @@ where
         settings: source.settings.clone(),
     };
 
-    controller.set_lowpass(5000.0);
+    //controller.set_lowpass(5000.0);
 
     (source, controller)
 }
@@ -38,7 +41,6 @@ pub struct Settings {
 }
 
 /// Filter that modifies reduces the volume to silence over a time period.
-#[derive(Clone)]
 pub struct FilteredSource<I> {
     input: I,
     input_buffer: Vec<f32>,
@@ -46,6 +48,9 @@ pub struct FilteredSource<I> {
     trailing_samples: Vec<f32>,
     current_buffer_index: usize,
     current_buffer: Vec<f32>,
+    lowpass_freq: Box<dyn Fn(f64)->f64 + Send + Sync>,
+    sample_count: usize,
+    last_lowpass_recalculation: usize,
 }
 
 pub struct Controller {
@@ -54,16 +59,7 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn set_lowpass(&self, freq: f64) {
-        let lowpass = lowpass_filter(
-            cutoff_from_frequency(
-                freq.min((self.sample_rate / 2) as f64),
-                self.sample_rate as usize,
-            ),
-            0.01,
-        );
-        self.settings.lock().unwrap().lowpass = lowpass.iter().map(|&x| x as f32).collect();
-    }
+    
 
     pub fn set_volume(&self, v: f64) {
         self.settings.lock().unwrap().volume = v as f32;
@@ -115,14 +111,31 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+
         if self.current_buffer_index < self.current_buffer.len() {
             self.current_buffer_index += 1;
+            self.sample_count += 1;
             return Some(self.current_buffer[self.current_buffer_index - 1]);
         }
 
+        let t = self.sample_count as f64 / self.sample_rate() as f64;
+
         {
-            let settings = self.settings.lock().unwrap();
-            let lowpass = &settings.lowpass;
+            let mut settings = self.settings.lock().unwrap();
+            let lowpass = &mut settings.lowpass;
+
+            if lowpass.is_empty() || self.sample_count > self.last_lowpass_recalculation + 8192 {
+                println!("Recalculating lowpass at t={}", t);
+                let freq = (self.lowpass_freq)(t);
+                let lowpass64 = lowpass_filter(
+                    cutoff_from_frequency(
+                        freq.min((self.sample_rate() / 2) as f64),
+                        self.sample_rate() as usize,
+                    ),
+                    0.01,
+                );
+                *lowpass = lowpass64.iter().map(|&x| x as f32).collect();
+            }
 
             // Must be at least the same size as the filter
             let frame_size = 1024 - lowpass.len();
