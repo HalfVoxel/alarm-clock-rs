@@ -65,7 +65,7 @@ struct AlarmInfo {
 fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
     let state = state.inner.lock().unwrap();
     Json(AlarmInfo {
-        time: state.next_alarm.format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
+        time: state.next_alarm.format("%Y-%m-%dT%H:%M:%S").to_string(),
         enabled: state.enabled,
     })
 }
@@ -73,7 +73,7 @@ fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
 #[post("/store", data = "<info>")]
 fn store(info: Json<AlarmInfo>, state: State<AlarmState>) {
     let mut state = state.inner.lock().unwrap();
-    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S").expect("Could not parse date");
+    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
     state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
     println!(
         "Set alarm to {} which is {} minutes into the future",
