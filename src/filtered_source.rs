@@ -118,7 +118,7 @@ where
             return Some(self.current_buffer[self.current_buffer_index - 1]);
         }
 
-        let t = self.sample_count as f64 / self.sample_rate() as f64;
+        let t = self.sample_count as f64 / (self.channels() as f64 * self.sample_rate() as f64);
 
         {
             let mut settings = self.settings.lock().unwrap();
