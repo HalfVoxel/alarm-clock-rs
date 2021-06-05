@@ -75,21 +75,25 @@ fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
 #[post("/store", data = "<info>")]
 fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
     {
-        let mut state = state.inner.lock().unwrap();
-        let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
-        state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
-        println!(
-            "Set alarm to {} which is {} minutes into the future",
-            state.next_alarm,
-            state
-                .next_alarm
-                .signed_duration_since(Utc::now())
-                .num_minutes()
-        );
-        state.enabled = info.enabled;
+        store_inner(&info, &state);
     }
 
-    return get_info(state);
+    get_info(state)
+}
+
+fn store_inner(info: &AlarmInfo, state: &AlarmState) {
+    let mut state = state.inner.lock().unwrap();
+    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
+    state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
+    println!(
+        "Set alarm to {} which is {} minutes into the future",
+        state.next_alarm,
+        state
+            .next_alarm
+            .signed_duration_since(Utc::now())
+            .num_minutes()
+    );
+    state.enabled = info.enabled;
 }
 
 fn start_server(alarm_state: AlarmState) {
@@ -99,7 +103,7 @@ fn start_server(alarm_state: AlarmState) {
         .launch();
 }
 
-fn play(path: &PathBuf, alarm_state: &AlarmState) {
+fn play(path: &Path, alarm_state: &AlarmState) {
     // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
     let device = rodio::default_output_device().unwrap();
 
@@ -195,6 +199,30 @@ fn start_alarm_thread(alarm_state: AlarmState) {
     }
 }
 
+const REMOTE_SERVER: Option<(&str, u32)> = Some(("http://home.arongranberg.com", 6000));
+
+fn sync(alarm_state: &AlarmState, url: &'static str, port: u32) -> anyhow::Result<()> {
+    let res =  reqwest::blocking::get(format!("{}:{}", url, port))?;
+    // let mut body = String::new();
+    let info: AlarmInfo = res.json()?;
+    // res.read_to_string(&mut body)?;
+
+    // let info: AlarmInfo = serde_json::from_str(&body)?;
+
+    store_inner(&info, alarm_state);
+    Ok(())
+}
+
+fn start_sync_thread(alarm_state: AlarmState, url: &'static str, port: u32) {
+    loop {
+        if let Err(err) = sync(&alarm_state, url, port) {
+            println!("Sync failed {:?}", err);
+            thread::sleep(Duration::from_secs(60));
+        }
+        thread::sleep(Duration::from_millis(2000));
+    }
+}
+
 fn main() {
     let alarm_state = AlarmState {
         inner: Arc::new(Mutex::new(InnerAlarmState {
@@ -204,7 +232,12 @@ fn main() {
     };
 
     let audio_alarm_state = alarm_state.clone();
-    thread::spawn(move || start_alarm_thread(audio_alarm_state));
+    let audio_alarm_state2 = alarm_state.clone();
+    if let Some((url, port)) = REMOTE_SERVER {
+        thread::spawn(move || start_sync_thread(audio_alarm_state2, url, port));
+        thread::spawn(move || start_alarm_thread(audio_alarm_state));
+    }
+
     start_server(alarm_state.clone());
 }
 
