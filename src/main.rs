@@ -1,52 +1,40 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 use rocket::State;
 use rocket_contrib::json::Json;
-use rodio::{Sink, Source};
 
-use std::{ffi::OsStr, fs::File, sync::Arc, sync::Mutex, thread, time};
-use std::{io::BufReader, path::Path, path::PathBuf};
+use std::{sync::Arc, sync::Mutex, thread, time};
 
-use time::{Duration, Instant};
-mod filtered_source;
-mod precalculated_source;
+use time::{Duration};
+
 use chrono::{DateTime, Utc};
-use filtered_source::dynamic_filter;
-use rand::prelude::*;
-use thiserror::Error;
 use chrono::NaiveDateTime;
-use precalculated_source::PrecalculatedSource;
+
+#[cfg(feature="audio")]
+mod filtered_source;
+
+#[cfg(feature="audio")]
+
+mod precalculated_source;
+#[cfg(feature="audio")]
+mod alarm;
 
 #[macro_use]
 extern crate rocket;
 
-fn frquency_cutoff_lp(t: f32) -> f32 {
-    let clamped_t = (t - 10.0).max(0.0);
-    100000.0f32.min(800.0 + clamped_t.powf(2.5) * 1.0)
-}
-
-fn volume(t: f32) -> f32 {
-    return 1.0f32.min(0.0 + 0.007 * t + 0.0f32.max(t - 5.0) * 0.013);
-}
-
-fn smoothstep(x: f32) -> f32 {
-    3.0 * x.powi(2) - 2.0 * x.powi(3)
-}
-
-fn fadeout(t: f32, duration: f32) -> f32 {
-    smoothstep((1.0 - (t / duration)).max(0.0))
-}
 
 #[derive(Clone)]
-struct AlarmState {
+pub struct AlarmState {
     inner: Arc<Mutex<InnerAlarmState>>,
 }
 
 impl AlarmState {
+    #[allow(dead_code)]
     fn should_start_alarm(&self) -> bool {
         let state = self.inner.lock().unwrap();
         state.enabled && Utc::now() >= state.next_alarm
     }
 
+    #[allow(dead_code)]
     fn disable(&self) {
         let mut state = self.inner.lock().unwrap();
         state.enabled = false;
@@ -103,106 +91,10 @@ fn start_server(alarm_state: AlarmState) {
         .launch();
 }
 
-fn play(path: &Path, alarm_state: &AlarmState) {
-    // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
-    let device = rodio::default_output_device().unwrap();
-
-    // let sink = Sink::try_new(&handle).unwrap();
-    let sink = Sink::new(&device);
-
-    // Add a dummy source of the sake of the example.
-    let file = File::open(path).unwrap();
-    let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-
-    let (source, controller) = dynamic_filter(source.convert_samples(), Box::new(|t| frquency_cutoff_lp(t as f32) as f64));
-    let source = PrecalculatedSource::new(source, 44000*300);
-    sink.append(source);
-
-    let alarm_timeout = 120.0;
-
-    let t0 = Instant::now();
-    loop {
-        let t = Instant::now().duration_since(t0).as_secs_f32();
-        if t > alarm_timeout || !alarm_state.should_start_alarm() {
-            break;
-        }
-
-        // let freq = frquency_cutoff_lp(t);
-        // controller.set_lowpass(freq as f64);
-        // controller.set_volume();
-        sink.set_volume(volume(t));
-        thread::sleep(Duration::from_millis(40));
-    }
-
-    let t1 = Instant::now();
-    let fadeout_duration = 10.0;
-    loop {
-        let t = Instant::now().duration_since(t0).as_secs_f32();
-        let t_fadeout = Instant::now().duration_since(t1).as_secs_f32();
-        if t_fadeout >= fadeout_duration {
-            break;
-        }
-        // let freq = frquency_cutoff_lp(t);
-        sink.set_volume(volume(t) * fadeout(t_fadeout, fadeout_duration));
-        // controller.set_lowpass(freq as f64);
-        thread::sleep(Duration::from_millis(40));
-    }
-
-    controller.set_volume(0.0);
-    sink.stop();
-    alarm_state.disable();
-}
-
-#[derive(Error, Debug)]
-enum AlarmSoundError {
-    #[error("Could not read directory `{0}`: {1}")]
-    CouldNotReadDir(PathBuf, std::io::Error),
-    #[error("There were no sound files in the sound directory")]
-    NoFiles,
-}
-
-fn random_alarm_sound(root_dir: &Path) -> Result<PathBuf, AlarmSoundError> {
-    let valid_extensions = ["mp3", "ogg", "flac", "wav"];
-    match root_dir.read_dir() {
-        Ok(iter) => iter
-            .filter_map(|x| x.ok().map(|x| x.path()))
-            .filter(|path| {
-                path.extension()
-                    .and_then(OsStr::to_str)
-                    .map(|x| valid_extensions.contains(&x))
-                    .unwrap_or_default()
-            })
-            .choose(&mut rand::thread_rng())
-            .ok_or(AlarmSoundError::NoFiles),
-        Err(e) => Err(AlarmSoundError::CouldNotReadDir(root_dir.to_path_buf(), e)),
-    }
-}
-
-fn start_alarm_thread(alarm_state: AlarmState) {
-    loop {
-        if alarm_state.should_start_alarm() {
-            println!("Starting alarm...");
-            match random_alarm_sound(Path::new("./sounds")) {
-                Ok(path) => {
-                    println!("Playing {}", path.to_str().unwrap());
-                    play(&path, &alarm_state)
-                }
-                Err(e) => {
-                    println!("{}", e);
-                    alarm_state.disable();
-                }
-            }
-            println!("Alarm finished...");
-        }
-
-        thread::sleep(Duration::from_millis(500));
-    }
-}
-
-fn sync(alarm_state: &AlarmState, url: &'static str, port: u32) -> anyhow::Result<()> {
-    let res =  reqwest::blocking::get(format!("{}:{}", url, port))?;
+fn sync(alarm_state: &AlarmState, url: &'static str, port: u32) -> Result<(), String> {
+    let res =  reqwest::blocking::get(format!("{}:{}", url, port)).map_err(|e| format!("{:?}", e))?;
     // let mut body = String::new();
-    let info: AlarmInfo = res.json()?;
+    let info: AlarmInfo = res.json().map_err(|e| format!("{:?}", e))?;
     // res.read_to_string(&mut body)?;
 
     // let info: AlarmInfo = serde_json::from_str(&body)?;
@@ -235,11 +127,15 @@ fn main() {
         })),
     };
 
-    let audio_alarm_state = alarm_state.clone();
-    let audio_alarm_state2 = alarm_state.clone();
     if let Some((url, port)) = remote_server {
+        let audio_alarm_state2 = alarm_state.clone();
         thread::spawn(move || start_sync_thread(audio_alarm_state2, url, port));
-        thread::spawn(move || start_alarm_thread(audio_alarm_state));
+
+        #[cfg(feature="audio")]
+        {
+            let audio_alarm_state = alarm_state.clone();
+            thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
+        }
     }
 
     start_server(alarm_state);
