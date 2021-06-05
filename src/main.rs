@@ -199,8 +199,6 @@ fn start_alarm_thread(alarm_state: AlarmState) {
     }
 }
 
-const REMOTE_SERVER: Option<(&str, u32)> = Some(("http://home.arongranberg.com", 6000));
-
 fn sync(alarm_state: &AlarmState, url: &'static str, port: u32) -> anyhow::Result<()> {
     let res =  reqwest::blocking::get(format!("{}:{}", url, port))?;
     // let mut body = String::new();
@@ -224,6 +222,12 @@ fn start_sync_thread(alarm_state: AlarmState, url: &'static str, port: u32) {
 }
 
 fn main() {
+    let remote_server = if std::env::args().any(|x| x == "--remote-sync") {
+        Some(("http://home.arongranberg.com/get", 6000))
+    } else {
+        None
+    };
+
     let alarm_state = AlarmState {
         inner: Arc::new(Mutex::new(InnerAlarmState {
             next_alarm: Utc::now(),
@@ -233,12 +237,12 @@ fn main() {
 
     let audio_alarm_state = alarm_state.clone();
     let audio_alarm_state2 = alarm_state.clone();
-    if let Some((url, port)) = REMOTE_SERVER {
+    if let Some((url, port)) = remote_server {
         thread::spawn(move || start_sync_thread(audio_alarm_state2, url, port));
         thread::spawn(move || start_alarm_thread(audio_alarm_state));
     }
 
-    start_server(alarm_state.clone());
+    start_server(alarm_state);
 }
 
 // use synthrs::synthesizer::{ make_samples, quantize_samples };
