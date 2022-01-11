@@ -93,55 +93,9 @@ fn start_server(alarm_state: AlarmState) {
 
 fn sync(alarm_state: &AlarmState, url: &'static str, port: u32) -> Result<(), String> {
     let url = format!("{}:{}", url, port);
-    // let info: Result<AlarmInfo, String> = futures::executor::block_on(async move {
-    //     let mut client = actix_web::client::Client::default();
-
-    // // Create request builder and send request
-    //     let response = client.get(&url)
-    //         .send()     // <- Send request
-    //         .await;     // <- Wait for response
-        
-    //     let mut response = response.map_err(|e| format!("{:?}", e))?;
-    //     let info: AlarmInfo = response.json().await.map_err(|e| format!("{:?}", e))?;
-
-    //     Ok(info)
-    // });
-    // let info = info?;
-
-    let res = reqwest::blocking::get(url).and_then(|x| x.text()).map_err(|e| format!("{:?}", e))?;
+    let client = reqwest::blocking::Client::new();
+    let res = client.post(url).send().and_then(|x| x.text()).map_err(|e| format!("{:?}", e))?;
     let info: AlarmInfo = serde_json::from_str(&res).unwrap();
-
-
-
-
-
-
-    // let info: AlarmInfo = response.json().map_err(|e| format!("{:?}", e))?;
-
-    // use curl::easy::Easy;
-
-    // let mut dst = Vec::new();
-    // {
-    //     let mut easy = Easy::new();
-    //     easy.url(&format!("{}:{}", url, port)).map_err(|e| format!("{:?}", e))?;
-
-    //     let mut transfer = easy.transfer();
-    //     transfer.write_function(|data| {
-    //         dst.extend_from_slice(data);
-    //         Ok(data.len())
-    //     }).map_err(|e| format!("{:?}", e))?;
-    //     transfer.perform().map_err(|e| format!("{:?}", e))?;
-    // }
-
-    // let mut http =  Request::new(format!("{}:{}", url, port)).map_err(|e| format!("{:?}", e))?;
-    // let res = http.get().send().map_err(|e| format!("{:?}", e))?;
-
-    // let mut body = String::new();
-    // let info: AlarmInfo = res.json().map_err(|e| format!("{:?}", e))?;
-    // res.read_to_string(&mut body)?;
-
-    // let info: AlarmInfo = serde_json::from_str(&res.text())?;
-    // let info: AlarmInfo = serde_json::from_slice(&dst).map_err(|e| format!("{:?}", e))?;
 
     store_inner(&info, alarm_state);
     Ok(())
