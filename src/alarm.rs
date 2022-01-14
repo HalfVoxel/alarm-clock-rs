@@ -40,7 +40,7 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
 
     let (source, controller) = dynamic_filter(source.convert_samples(), Box::new(|t| frquency_cutoff_lp(t as f32) as f64));
-    let source = PrecalculatedSource::new(source, 44000*300);
+    // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
     let alarm_timeout = 120.0;
