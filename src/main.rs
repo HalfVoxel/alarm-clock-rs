@@ -91,7 +91,7 @@ fn store_inner(info: &AlarmInfo, state: &AlarmState) {
 fn start_server(alarm_state: AlarmState) {
     rocket::ignite()
         .manage(alarm_state)
-        .mount("/", routes![get_info, store])
+        .mount("/", routes![get_info, get_info2, store])
         .launch();
 }
 
