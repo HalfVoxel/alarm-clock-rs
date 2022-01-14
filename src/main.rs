@@ -29,9 +29,8 @@ pub struct AlarmState {
 impl AlarmState {
     #[allow(dead_code)]
     fn should_start_alarm(&self) -> bool {
-        true
-        // let state = self.inner.lock().unwrap();
-        // state.enabled && Utc::now() >= state.next_alarm
+        let state = self.inner.lock().unwrap();
+        state.enabled && Utc::now() >= state.next_alarm
     }
 
     #[allow(dead_code)]
@@ -49,6 +48,11 @@ struct InnerAlarmState {
 struct AlarmInfo {
     time: String,
     enabled: bool,
+}
+
+#[get("/get")]
+fn get_info2(state: State<AlarmState>) -> Json<AlarmInfo> {
+    get_info(state)
 }
 
 #[post("/get")]
@@ -113,7 +117,7 @@ fn start_sync_thread(alarm_state: AlarmState, url: &'static str, port: u32) {
 
 fn main() {
     let remote_server = if std::env::args().any(|x| x == "--remote-sync") {
-        Some(("http://home.arongranberg.com/get", 6000))
+        Some(("http://home.arongranberg.com/get", 8030))
     } else {
         None
     };
