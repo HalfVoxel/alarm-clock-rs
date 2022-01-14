@@ -8,7 +8,7 @@ use crate::filtered_source::dynamic_filter;
 use rand::prelude::*;
 use thiserror::Error;
 use crate::precalculated_source::PrecalculatedSource;
-use crate::AlarmState;
+use crate::{AlarmState, sync_store};
 
 fn frquency_cutoff_lp(t: f32) -> f32 {
     let clamped_t = (t - 10.0).max(0.0);
@@ -76,6 +76,7 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     controller.set_volume(0.0);
     sink.stop();
     alarm_state.disable();
+    sync_store(alarm_state).unwrap();
 }
 
 #[derive(Error, Debug)]
@@ -116,6 +117,7 @@ pub fn start_alarm_thread(alarm_state: AlarmState) {
                 Err(e) => {
                     println!("{}", e);
                     alarm_state.disable();
+                    sync_store(&alarm_state).unwrap();
                 }
             }
             println!("Alarm finished...");
