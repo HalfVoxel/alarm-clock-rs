@@ -81,20 +81,25 @@ fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
 fn store_inner(info: &AlarmInfo, state: &AlarmState) {
     let mut state = state.inner.lock().unwrap();
     let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
-    state.next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
-    if state.enabled {
-        println!(
-            "Set alarm to {} which is {} minutes into the future",
-            state.next_alarm,
-            state
-                .next_alarm
-                .signed_duration_since(Utc::now())
-                .num_minutes()
-        );
-    } else {
-        println!("Disabled alarm");
-    }
+    let next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
+    let diff = next_alarm != state.next_alarm || info.enabled != state.enabled;
+    state.next_alarm = next_alarm;
     state.enabled = info.enabled;
+
+    if diff {
+        if state.enabled {
+            println!(
+                "Set alarm to {} which is {} minutes into the future",
+                state.next_alarm,
+                state
+                    .next_alarm
+                    .signed_duration_since(Utc::now())
+                    .num_minutes()
+            );
+        } else {
+            println!("Disabled alarm");
+        }
+    }
 }
 
 fn start_server(alarm_state: AlarmState) {
