@@ -139,7 +139,13 @@ fn start_sync_thread(alarm_state: AlarmState, url: &'static str) {
             println!("Sync failed {:?}", err);
             thread::sleep(Duration::from_secs(60));
         }
-        thread::sleep(Duration::from_millis(2000));
+
+        let sleep_ms = if alarm_state.should_start_alarm() {
+            400
+        } else {
+            5000
+        };
+        thread::sleep(Duration::from_millis(sleep_ms));
     }
 }
 
