@@ -3,12 +3,12 @@ use rodio::{Sink, Source};
 use std::{ffi::OsStr, fs::File, thread, time};
 use std::{io::BufReader, path::Path, path::PathBuf};
 
-use time::{Duration, Instant};
 use crate::filtered_source::dynamic_filter;
+use crate::precalculated_source::PrecalculatedSource;
+use crate::{sync_store, AlarmState};
 use rand::prelude::*;
 use thiserror::Error;
-use crate::precalculated_source::PrecalculatedSource;
-use crate::{AlarmState, sync_store};
+use time::{Duration, Instant};
 
 fn frquency_cutoff_lp(t: f32) -> f32 {
     let clamped_t = (t - 10.0).max(0.0);
@@ -16,7 +16,7 @@ fn frquency_cutoff_lp(t: f32) -> f32 {
 }
 
 fn volume(t: f32) -> f32 {
-    return 1.0f32.min(0.0 + 0.007 * t + 0.0f32.max(t - 5.0) * 0.013);
+    1.0f32.min(0.0 + 0.007 * t + 0.0f32.max(t - 5.0) * 0.013)
 }
 
 fn smoothstep(x: f32) -> f32 {
@@ -26,7 +26,6 @@ fn smoothstep(x: f32) -> f32 {
 fn fadeout(t: f32, duration: f32) -> f32 {
     smoothstep((1.0 - (t / duration)).max(0.0))
 }
-
 
 fn play(path: &Path, alarm_state: &AlarmState) {
     // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
@@ -38,8 +37,24 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     // Add a dummy source of the sake of the example.
     let file = File::open(path).unwrap();
     let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+    let (source, controller) = dynamic_filter(
+        source.convert_samples::<f32>(),
+        Box::new(|t| frquency_cutoff_lp(t as f32) as f64),
+    );
 
-    let (source, controller) = dynamic_filter(source.convert_samples(), Box::new(|t| frquency_cutoff_lp(t as f32) as f64));
+    let sine = rodio::source::SineWave::new(30).amplify(0.7);
+    let sources: Vec<Box<dyn rodio::source::Source<Item = f32> + Send>> = vec![
+        Box::new(
+            // Play sine wave for a few seconds to make the speakers wake up
+            sine.take_duration(Duration::from_millis(3000))
+                // Fade in sine wave over one second to avoid speaker pop
+                .fade_in(Duration::from_millis(1000)),
+        ),
+        Box::new(source),
+    ];
+
+    let source = rodio::source::from_iter(sources);
+
     // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
@@ -54,8 +69,8 @@ fn play(path: &Path, alarm_state: &AlarmState) {
 
         // let freq = frquency_cutoff_lp(t);
         // controller.set_lowpass(freq as f64);
-        // controller.set_volume();
-        sink.set_volume(volume(t));
+        controller.set_volume(volume(t));
+        // sink.set_volume(t.min(1.0));
         thread::sleep(Duration::from_millis(40));
     }
 

@@ -5,7 +5,10 @@ use synthrs::filter::{cutoff_from_frequency, lowpass_filter};
 use time::Duration;
 
 /// Internal function that builds a `FilteredSource` object.
-pub fn dynamic_filter<I>(input: I, lowpass_freq: Box<dyn Fn(f64)->f64 + Send + Sync>) -> (FilteredSource<I>, Controller)
+pub fn dynamic_filter<I>(
+    input: I,
+    lowpass_freq: Box<dyn Fn(f64) -> f64 + Send + Sync>,
+) -> (FilteredSource<I>, Controller)
 where
     I: Source<Item = f32>,
 {
@@ -48,7 +51,7 @@ pub struct FilteredSource<I> {
     trailing_samples: Vec<f32>,
     current_buffer_index: usize,
     current_buffer: Vec<f32>,
-    lowpass_freq: Box<dyn Fn(f64)->f64 + Send + Sync>,
+    lowpass_freq: Box<dyn Fn(f64) -> f64 + Send + Sync>,
     sample_count: usize,
     last_lowpass_recalculation: usize,
 }
@@ -59,10 +62,8 @@ pub struct Controller {
 }
 
 impl Controller {
-    
-
-    pub fn set_volume(&self, v: f64) {
-        self.settings.lock().unwrap().volume = v as f32;
+    pub fn set_volume(&self, v: f32) {
+        self.settings.lock().unwrap().volume = v;
     }
 }
 
@@ -111,7 +112,6 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-
         if self.current_buffer_index < self.current_buffer.len() {
             self.current_buffer_index += 1;
             self.sample_count += 1;
