@@ -156,23 +156,24 @@ fn main() {
         None
     };
 
+    let play_immediately = std::env::args().any(|x| x == "--play");
     let alarm_state = AlarmState {
         inner: Arc::new(Mutex::new(InnerAlarmState {
             next_alarm: Utc::now(),
-            enabled: false,
+            enabled: play_immediately,
         })),
-        sync_url: remote_server
+        sync_url: remote_server,
     };
 
     if let Some(url) = remote_server {
         let audio_alarm_state2 = alarm_state.clone();
         thread::spawn(move || start_sync_thread(audio_alarm_state2, url));
+    }
 
-        #[cfg(feature="audio")]
-        {
-            let audio_alarm_state = alarm_state.clone();
-            thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
-        }
+    #[cfg(feature = "audio")]
+    if remote_server.is_some() || play_immediately {
+        let audio_alarm_state = alarm_state.clone();
+        thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
     }
 
     start_server(alarm_state);
