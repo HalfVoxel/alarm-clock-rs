@@ -4,27 +4,26 @@ use rocket_contrib::json::Json;
 
 use std::{sync::Arc, sync::Mutex, thread, time};
 
-use time::{Duration};
+use time::Duration;
 
-use chrono::{DateTime, Utc};
 use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 
-#[cfg(feature="audio")]
+#[cfg(feature = "audio")]
 mod filtered_source;
 
-#[cfg(feature="audio")]
-mod precalculated_source;
-#[cfg(feature="audio")]
+#[cfg(feature = "audio")]
 mod alarm;
+#[cfg(feature = "audio")]
+mod precalculated_source;
 
 #[macro_use]
 extern crate rocket;
 
-
 #[derive(Clone)]
 pub struct AlarmState {
     inner: Arc<Mutex<InnerAlarmState>>,
-    sync_url: Option<&'static str>
+    sync_url: Option<&'static str>,
 }
 
 impl AlarmState {
@@ -80,7 +79,8 @@ fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
 
 fn store_inner(info: &AlarmInfo, state: &AlarmState) {
     let mut state = state.inner.lock().unwrap();
-    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f").expect("Could not parse date");
+    let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f")
+        .expect("Could not parse date");
     let next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
     let diff = next_alarm != state.next_alarm || info.enabled != state.enabled;
     state.next_alarm = next_alarm;
@@ -111,7 +111,11 @@ fn start_server(alarm_state: AlarmState) {
 
 fn sync(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
     let client = reqwest::blocking::Client::new();
-    let res = client.get(format!("{}/get", url)).send().and_then(|x| x.text()).map_err(|e| format!("{:?}", e))?;
+    let res = client
+        .get(format!("{}/get", url))
+        .send()
+        .and_then(|x| x.text())
+        .map_err(|e| format!("{:?}", e))?;
     let info: AlarmInfo = serde_json::from_str(&res).unwrap();
 
     store_inner(&info, alarm_state);
@@ -124,14 +128,17 @@ pub fn sync_store(alarm_state: &AlarmState) -> Result<(), String> {
         let m = alarm_state.inner.lock().unwrap();
         let info = state_to_info(&m);
         let json = serde_json::to_string(&info).unwrap();
-        client.post(format!("{}/store", url)).body(json).send().unwrap();
+        client
+            .post(format!("{}/store", url))
+            .body(json)
+            .send()
+            .unwrap();
 
         Ok(())
     } else {
         Ok(())
     }
 }
-
 
 fn start_sync_thread(alarm_state: AlarmState, url: &'static str) {
     loop {

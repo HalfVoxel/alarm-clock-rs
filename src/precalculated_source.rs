@@ -1,6 +1,6 @@
 use rodio::{Sample, Source};
 
-use std::{time};
+use std::time;
 use time::Duration;
 
 #[derive(Clone)]
@@ -27,8 +27,12 @@ where
 
     pub fn precalculate(&mut self, samples_to_precalculate: usize) {
         println!("Precalculating {} samples", samples_to_precalculate);
-        self.current_buffer.extend(self.input.by_ref().take(samples_to_precalculate));
-        println!("Precalculation done. Got {} samples", self.current_buffer.len());
+        self.current_buffer
+            .extend(self.input.by_ref().take(samples_to_precalculate));
+        println!(
+            "Precalculation done. Got {} samples",
+            self.current_buffer.len()
+        );
     }
 }
 
@@ -59,7 +63,9 @@ where
         let inner = self.input.size_hint();
         (
             inner.0 + self.current_buffer.len() - self.current_buffer_index,
-            inner.1.map(|x| x + self.current_buffer.len() - self.current_buffer_index),
+            inner
+                .1
+                .map(|x| x + self.current_buffer.len() - self.current_buffer_index),
         )
     }
 }
