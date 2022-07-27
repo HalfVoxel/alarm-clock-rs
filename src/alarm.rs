@@ -46,7 +46,7 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     let sources: Vec<Box<dyn rodio::source::Source<Item = f32> + Send>> = vec![
         Box::new(
             // Play sine wave for a few seconds to make the speakers wake up
-            sine.take_duration(Duration::from_millis(3000))
+            sine.take_duration(Duration::from_millis(5000))
                 // Fade in sine wave over one second to avoid speaker pop
                 .fade_in(Duration::from_millis(1000)),
         ),
@@ -58,7 +58,7 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
-    let alarm_timeout = 120.0;
+    let alarm_timeout = 5.0 * 60.0;
 
     let t0 = Instant::now();
     loop {
