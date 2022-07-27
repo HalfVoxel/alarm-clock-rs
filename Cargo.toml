@@ -10,7 +10,7 @@ edition = "2018"
 # rodio = { git = "https://github.com/RustAudio/rodio", rev = "3bc614f" }
 synthrs = { git = "https://github.com/gyng/synthrs", rev = "265ca00" }
 # rustfft = "3.0"
-rocket = "0.4.10"
+rocket = { version = "0.5.0-rc.2", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 chrono = "0.4"
 rand = "0.8"
@@ -29,11 +29,6 @@ audio = ["rodio"]
 
 # [patch.crates-io]
 # cpal = { git = "https://github.com/RustAudio/cpal.git", rev = "2b31fe4" }
-
-[dependencies.rocket_contrib]
-version = "0.4.10"
-default-features = false
-features = ["json"]
 
 [profile.release]
 panic = "abort"

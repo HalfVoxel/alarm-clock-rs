@@ -1,6 +1,6 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 use rocket::State;
-use rocket_contrib::json::Json;
+use rocket::serde::json::Json;
 
 use std::{sync::Arc, sync::Mutex, thread, time};
 
@@ -51,7 +51,7 @@ struct AlarmInfo {
 }
 
 #[get("/get")]
-fn get_info2(state: State<AlarmState>) -> Json<AlarmInfo> {
+fn get_info2(state: &State<AlarmState>) -> Json<AlarmInfo> {
     get_info(state)
 }
 
@@ -63,15 +63,15 @@ fn state_to_info(state: &InnerAlarmState) -> AlarmInfo {
 }
 
 #[post("/get")]
-fn get_info(state: State<AlarmState>) -> Json<AlarmInfo> {
+fn get_info(state: &State<AlarmState>) -> Json<AlarmInfo> {
     let state = state.inner.lock().unwrap();
     Json(state_to_info(&state))
 }
 
 #[post("/store", data = "<info>")]
-fn store(info: Json<AlarmInfo>, state: State<AlarmState>) -> Json<AlarmInfo> {
+fn store(info: Json<AlarmInfo>, state: &State<AlarmState>) -> Json<AlarmInfo> {
     {
-        store_inner(&info, &state);
+        store_inner(&info, state);
     }
 
     get_info(state)
@@ -100,13 +100,6 @@ fn store_inner(info: &AlarmInfo, state: &AlarmState) {
             println!("Disabled alarm");
         }
     }
-}
-
-fn start_server(alarm_state: AlarmState) {
-    rocket::ignite()
-        .manage(alarm_state)
-        .mount("/", routes![get_info, get_info2, store])
-        .launch();
 }
 
 fn sync(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
@@ -156,7 +149,8 @@ fn start_sync_thread(alarm_state: AlarmState, url: &'static str) {
     }
 }
 
-fn main() {
+#[launch]
+fn launch_rocket() -> _ {
     let remote_server = if std::env::args().any(|x| x == "--remote-sync") {
         Some("http://home.arongranberg.com:8030")
     } else {
@@ -183,7 +177,9 @@ fn main() {
         thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
     }
 
-    start_server(alarm_state);
+    rocket::build()
+        .manage(alarm_state)
+        .mount("/", routes![get_info, get_info2, store])
 }
 
 // use synthrs::synthesizer::{ make_samples, quantize_samples };
