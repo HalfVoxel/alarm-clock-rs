@@ -58,7 +58,7 @@ fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
     // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
-    let alarm_timeout = 4.0; //5.0 * 60.0;
+    let alarm_timeout = 5.0 * 60.0;
 
     let t0 = Instant::now();
     loop {
