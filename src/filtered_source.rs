@@ -162,11 +162,11 @@ where
 
             let buffer = &mut self.current_buffer;
             buffer.resize(input_samples.len() - lowpass.len(), 0.0);
-            convolve(&lowpass, &input_samples, buffer);
+            convolve(lowpass, input_samples, buffer);
 
             for s in buffer {
                 *s *= settings.volume;
-                *s = s.min(1.0).max(-1.0);
+                *s = s.clamp(-1.0, 1.0);
             }
 
             self.current_buffer_index = 0;
