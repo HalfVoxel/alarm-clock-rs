@@ -109,7 +109,7 @@ fn store_compat(info: Json<AlarmInfo>, state: &State<AlarmState>) -> Json<AlarmI
     get_info(state)
 }
 
-#[post("/state/last_played_alarm", data = "<time>")]
+#[put("/state/last_played_alarm", data = "<time>")]
 fn on_alarm_finished(time: Json<DateTime<Utc>>, state: &State<AlarmState>) -> Json<AlarmInfo> {
     println!("Alarm finished at {time:?}");
     let mut s = state.inner.lock().unwrap();
@@ -147,7 +147,6 @@ fn sync(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
         .and_then(|x| x.error_for_status())
         .and_then(|x| x.text())
         .map_err(|e| format!("{:?}", e))?;
-    println!("Got response: {:?}", res);
     let new_state: InnerAlarmState = serde_json::from_str(&res).unwrap();
 
     store_inner(alarm_state, new_state);
