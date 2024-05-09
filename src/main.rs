@@ -67,6 +67,11 @@ fn get_info(state: &State<AlarmState>) -> Json<AlarmInfo> {
     Json(state_to_info(&state))
 }
 
+#[post("/get")]
+fn get_info_compat(state: &State<AlarmState>) -> Json<AlarmInfo> {
+    get_info(state)
+}
+
 #[get("/state")]
 fn get_state(state: &State<AlarmState>) -> Json<InnerAlarmState> {
     let state = state.inner.lock().unwrap();
@@ -84,11 +89,6 @@ fn state_to_info(state: &InnerAlarmState) -> AlarmInfo {
         time: state.next_alarm.format("%Y-%m-%dT%H:%M:%S").to_string(),
         enabled: state.enabled && state.last_played_alarm.map(|v| state.next_alarm > v).unwrap_or(true),
     }
-}
-
-#[post("/get")]
-fn get_info_compat(state: &State<AlarmState>) -> Json<AlarmInfo> {
-    get_info(state)
 }
 
 #[post("/store", data = "<info>")]
@@ -112,8 +112,10 @@ fn store_compat(info: Json<AlarmInfo>, state: &State<AlarmState>) -> Json<AlarmI
 #[put("/state/last_played_alarm", data = "<time>")]
 fn on_alarm_finished(time: Json<DateTime<Utc>>, state: &State<AlarmState>) -> Json<AlarmInfo> {
     println!("Alarm finished at {time:?}");
-    let mut s = state.inner.lock().unwrap();
-    s.last_played_alarm = s.last_played_alarm.max(Some(*time));
+    {
+        let mut s = state.inner.lock().unwrap();
+        s.last_played_alarm = s.last_played_alarm.max(Some(*time));
+    }
     get_info(state)
 }
 
