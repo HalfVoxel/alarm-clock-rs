@@ -141,10 +141,28 @@ fn store_inner(state: &AlarmState, new_state: InnerAlarmState) {
     }
 }
 
-fn sync(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
+fn sync_down(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
     let client = reqwest::blocking::Client::new();
     let res = client
         .get(format!("{}/state", url))
+        .send()
+        .and_then(|x| x.error_for_status())
+        .and_then(|x| x.text())
+        .map_err(|e| format!("{:?}", e))?;
+    let new_state: InnerAlarmState = serde_json::from_str(&res).unwrap();
+
+    store_inner(alarm_state, new_state);
+    Ok(())
+}
+
+fn sync_up(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
+    let client = reqwest::blocking::Client::new();
+    let json = {
+        serde_json::to_string(&*alarm_state.inner.lock().unwrap()).unwrap()
+    };
+    let res = client
+        .put(format!("{}/state", url))
+        .body(json)
         .send()
         .and_then(|x| x.error_for_status())
         .and_then(|x| x.text())
@@ -196,7 +214,7 @@ pub fn disable_alarm_and_sync(alarm_state: &AlarmState, trigger_time: DateTime<U
 
 fn start_sync_thread(alarm_state: AlarmState, url: &'static str) {
     loop {
-        if let Err(err) = sync(&alarm_state, url) {
+        if let Err(err) = sync_down(&alarm_state, url) {
             println!("Sync failed {:?}", err);
             thread::sleep(Duration::from_secs(60));
         }
@@ -223,12 +241,23 @@ fn launch_rocket() -> _ {
         inner: Arc::new(Mutex::new(InnerAlarmState {
             next_alarm: Utc::now(),
             last_played_alarm: None,
-            enabled: play_immediately,
+            enabled: false,
         })),
         sync_url: remote_server,
     };
 
     if let Some(url) = remote_server {
+        sync_down(&alarm_state, url).unwrap();
+    }
+
+    if play_immediately {
+        let mut s = alarm_state.inner.lock().unwrap();
+        s.next_alarm = Utc::now();
+        s.enabled = true;
+    }
+
+    if let Some(url) = remote_server {
+        sync_up(&alarm_state, url).unwrap();
         let audio_alarm_state2 = alarm_state.clone();
         thread::spawn(move || start_sync_thread(audio_alarm_state2, url));
     }
