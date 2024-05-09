@@ -8,11 +8,11 @@ edition = "2018"
 
 [dependencies]
 # rodio = { git = "https://github.com/RustAudio/rodio", rev = "3bc614f" }
-synthrs = { git = "https://github.com/gyng/synthrs", rev = "265ca00" }
+synthrs = { git = "https://github.com/gyng/synthrs", rev = "77e062f3e40304dd2c3611d70ece6a0e4eaf9750" }
 # rustfft = "3.0"
-rocket = { version = "0.5.0-rc.2", features = ["json"] }
+rocket = { version = "0.5.0", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 thiserror = "1.0"
 # minihttp = { version = "0.1.9", features = [] }
@@ -21,7 +21,7 @@ thiserror = "1.0"
 serde_json = "1.0"
 # requests = "0.0"
 futures = "0.3"
-reqwest = { version = "0.11", features = ["rustls-tls", "blocking"], default-features=false }
+reqwest = { version = "0.12.4", features = ["rustls-tls", "blocking"], default-features=false }
 rodio = { version = "0.11.0", optional = true }
 
 [features]

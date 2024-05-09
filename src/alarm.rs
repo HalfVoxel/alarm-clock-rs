@@ -1,11 +1,11 @@
+use chrono::{DateTime, Utc};
 use rodio::{Sink, Source};
 
 use std::{ffi::OsStr, fs::File, thread, time};
 use std::{io::BufReader, path::Path, path::PathBuf};
 
 use crate::filtered_source::dynamic_filter;
-use crate::precalculated_source::PrecalculatedSource;
-use crate::{sync_store, AlarmState};
+use crate::{disable_alarm_and_sync, AlarmState};
 use rand::prelude::*;
 use thiserror::Error;
 use time::{Duration, Instant};
@@ -27,7 +27,7 @@ fn fadeout(t: f32, duration: f32) -> f32 {
     smoothstep((1.0 - (t / duration)).max(0.0))
 }
 
-fn play(path: &Path, alarm_state: &AlarmState) {
+fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
     // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
     let device = rodio::default_output_device().unwrap();
 
@@ -58,12 +58,12 @@ fn play(path: &Path, alarm_state: &AlarmState) {
     // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
-    let alarm_timeout = 5.0 * 60.0;
+    let alarm_timeout = 4.0; //5.0 * 60.0;
 
     let t0 = Instant::now();
     loop {
         let t = Instant::now().duration_since(t0).as_secs_f32();
-        if t > alarm_timeout || !alarm_state.should_start_alarm() {
+        if t > alarm_timeout || Some(trigger_time) != alarm_state.should_start_alarm() {
             break;
         }
 
@@ -90,8 +90,7 @@ fn play(path: &Path, alarm_state: &AlarmState) {
 
     controller.set_volume(0.0);
     sink.stop();
-    alarm_state.disable();
-    sync_store(alarm_state).unwrap();
+    disable_alarm_and_sync(alarm_state, trigger_time).unwrap();
 }
 
 #[derive(Error, Debug)]
@@ -122,17 +121,16 @@ fn random_alarm_sound(root_dir: &Path) -> Result<PathBuf, AlarmSoundError> {
 pub fn start_alarm_thread(alarm_state: AlarmState) {
     println!("Starting alarm thread");
     loop {
-        if alarm_state.should_start_alarm() {
+        if let Some(trigger_time) = alarm_state.should_start_alarm() {
             println!("Starting alarm...");
             match random_alarm_sound(Path::new("./sounds")) {
                 Ok(path) => {
                     println!("Playing {}", path.to_str().unwrap());
-                    play(&path, &alarm_state)
+                    play(&path, trigger_time, &alarm_state)
                 }
                 Err(e) => {
                     println!("{}", e);
-                    alarm_state.disable();
-                    sync_store(&alarm_state).unwrap();
+                    disable_alarm_and_sync(&alarm_state, trigger_time).unwrap();
                 }
             }
             println!("Alarm finished...");
