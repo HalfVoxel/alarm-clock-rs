@@ -1,4 +1,3 @@
-#![feature(proc_macro_hygiene, decl_macro)]
 use rocket::State;
 use rocket::serde::json::Json;
 
