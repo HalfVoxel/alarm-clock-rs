@@ -75,7 +75,7 @@ fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
     }
 
     let t1 = Instant::now();
-    let fadeout_duration = 10.0;
+    let fadeout_duration = 5.0;
     loop {
         let t = Instant::now().duration_since(t0).as_secs_f32();
         let t_fadeout = Instant::now().duration_since(t1).as_secs_f32();
@@ -83,7 +83,7 @@ fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
             break;
         }
         // let freq = frquency_cutoff_lp(t);
-        sink.set_volume(volume(t) * fadeout(t_fadeout, fadeout_duration));
+        controller.set_volume(volume(t) * fadeout(t_fadeout, fadeout_duration));
         // controller.set_lowpass(freq as f64);
         thread::sleep(Duration::from_millis(40));
     }
