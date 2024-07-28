@@ -57,6 +57,7 @@ pub struct FilteredSource<I> {
 }
 
 pub struct Controller {
+    #[allow(unused)]
     sample_rate: u32,
     settings: Arc<Mutex<Settings>>,
 }
@@ -67,6 +68,7 @@ impl Controller {
     }
 }
 
+#[allow(unused)]
 pub fn convolve(filter: &[f32], input: &[f32], output: &mut [f32]) {
     assert_eq!(output.len(), input.len() - filter.len(), "output size are only the inner valid samples. filter.len()/2 samples on each side are skipped.");
     assert_eq!(filter.len() % 2, 0, "filter must have an even length");
@@ -75,7 +77,7 @@ pub fn convolve(filter: &[f32], input: &[f32], output: &mut [f32]) {
         "input must be at least as long as filter"
     );
 
-    let h_len = (filter.len() / 2) as usize;
+    let h_len = filter.len() / 2;
     for i in h_len..input.len() - h_len {
         let mut v = 0.0;
         for j in 0..filter.len() {
@@ -85,6 +87,7 @@ pub fn convolve(filter: &[f32], input: &[f32], output: &mut [f32]) {
     }
 }
 
+#[allow(unused)]
 pub fn convolve_f64(filter: &[f64], input: &[f64], output: &mut [f64]) {
     assert_eq!(output.len(), input.len() - filter.len(), "output size are only the inner valid samples. filter.len()/2 samples on each side are skipped.");
     assert_eq!(filter.len() % 2, 0, "filter must have an even length");
@@ -93,7 +96,7 @@ pub fn convolve_f64(filter: &[f64], input: &[f64], output: &mut [f64]) {
         "input must be at least as long as filter"
     );
 
-    let h_len = (filter.len() / 2) as usize;
+    let h_len = filter.len() / 2;
     for i in h_len..input.len() - h_len {
         let mut v = 0.0;
         for j in 0..filter.len() {

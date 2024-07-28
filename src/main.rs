@@ -1,12 +1,18 @@
-use rocket::State;
+use mqtt_sync::{SyncStorage, SyncedContainer};
 use rocket::serde::json::Json;
+use rocket::State;
+use serde::{Deserialize, Serialize};
+use sync_common::TestSync;
 
-use std::{sync::Arc, sync::Mutex, thread, time};
+use rocket::tokio::sync::Mutex;
+use std::fmt::Debug;
+use std::io::Write;
+use std::{sync::Arc, thread, time};
 
 use time::Duration;
 
-use chrono::NaiveDateTime;
 use chrono::{DateTime, Utc};
+use chrono::{Duration as DateDuration, NaiveDateTime};
 
 #[cfg(feature = "audio")]
 mod filtered_source;
@@ -16,45 +22,92 @@ mod alarm;
 #[cfg(feature = "audio")]
 mod precalculated_source;
 
+#[cfg(feature = "motion")]
+mod sleep_monitor;
+
 #[macro_use]
 extern crate rocket;
 
 #[derive(Clone)]
 pub struct AlarmState {
-    inner: Arc<Mutex<InnerAlarmState>>,
-    sync_url: Option<&'static str>,
+    inner: Arc<SyncedContainer<InnerAlarmState>>,
+    last_played: Arc<SyncedContainer<LastPlayed>>,
+    #[cfg(feature = "motion")]
+    sleep_monitor: Arc<Mutex<SleepMonitorState>>,
+    storage: SyncStorage,
+    is_playing: Arc<SyncedContainer<bool>>,
+    is_user_in_bed: Arc<SyncedContainer<bool>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LastPlayed {
+    last_played_time: Option<DateTime<Utc>>,
+}
+
+#[cfg(feature = "motion")]
+struct SleepMonitorState {
+    sleep_monitor: sleep_monitor::SleepMonitor,
+    accelerometer: sleep_monitor::Accelerometer,
+    alarm_is_playing: bool,
 }
 
 impl AlarmState {
     #[allow(dead_code)]
     fn should_start_alarm(&self) -> Option<DateTime<Utc>> {
-        let state = self.inner.lock().unwrap();
-        if state.enabled && Utc::now() >= state.next_alarm && state.last_played_alarm.map(|v| state.next_alarm > v).unwrap_or(true) {
+        self.should_start_alarm_soon(DateDuration::zero())
+    }
+
+    #[allow(dead_code)]
+    fn should_start_alarm_soon(&self, margin: DateDuration) -> Option<DateTime<Utc>> {
+        let state = self.inner.get().clone().unwrap();
+        let last_played = self.last_played.get().clone().unwrap();
+        if state.enabled
+            && Utc::now() + margin >= state.next_alarm
+            && last_played
+                .last_played_time
+                .map(|v| state.next_alarm > v)
+                .unwrap_or(true)
+        {
+            assert!(state.is_trigger_time(state.next_alarm, &last_played));
             Some(state.next_alarm)
         } else {
             None
         }
     }
 
-    #[allow(dead_code)]
-    fn disable(&self) {
-        let mut state = self.inner.lock().unwrap();
-        state.enabled = false;
+    fn is_trigger_time(&self, time: DateTime<Utc>) -> bool {
+        self.inner
+            .get()
+            .clone()
+            .unwrap()
+            .is_trigger_time(time, self.last_played.get().as_ref().unwrap())
     }
 
-    fn on_alarm_finished(&self, time: DateTime<Utc>) {
-        let mut state = self.inner.lock().unwrap();
-        state.last_played_alarm = state.last_played_alarm.max(Some(time));
+    async fn on_alarm_finished(&self, time: DateTime<Utc>) {
+        self.last_played
+            .update(|data| {
+                data.last_played_time = Some(time);
+            })
+            .await;
     }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct InnerAlarmState {
     next_alarm: DateTime<Utc>,
-    last_played_alarm: Option<DateTime<Utc>>,
     enabled: bool,
 }
 
+impl InnerAlarmState {
+    fn is_trigger_time(&self, time: DateTime<Utc>, last_played: &LastPlayed) -> bool {
+        self.enabled
+            && self.next_alarm == time
+            && last_played
+                .last_played_time
+                .map(|v| time > v)
+                .unwrap_or(true)
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize)]
 struct AlarmInfo {
     time: String,
@@ -63,8 +116,10 @@ struct AlarmInfo {
 
 #[get("/get")]
 fn get_info(state: &State<AlarmState>) -> Json<AlarmInfo> {
-    let state = state.inner.lock().unwrap();
-    Json(state_to_info(&state))
+    let last_played = state.last_played.get().clone().unwrap();
+    let state = state.inner.get().clone().unwrap();
+
+    Json(state_to_info(&state, &last_played))
 }
 
 #[post("/get")]
@@ -74,203 +129,244 @@ fn get_info_compat(state: &State<AlarmState>) -> Json<AlarmInfo> {
 
 #[get("/state")]
 fn get_state(state: &State<AlarmState>) -> Json<InnerAlarmState> {
-    let state = state.inner.lock().unwrap();
-    Json(state.clone())
+    let state = state.inner.get().clone().unwrap();
+    Json(state)
 }
 
 #[put("/state", data = "<new_state>")]
-fn put_state(state: &State<AlarmState>, new_state: Json<InnerAlarmState>) -> Json<InnerAlarmState> {
-    store_inner(state, (*new_state).clone());
-    Json(state.inner.lock().unwrap().clone())
+async fn put_state(
+    state: &State<AlarmState>,
+    new_state: Json<InnerAlarmState>,
+) -> Json<InnerAlarmState> {
+    state.inner.set(new_state.0).await;
+    Json(state.inner.get().clone().unwrap())
 }
 
-fn state_to_info(state: &InnerAlarmState) -> AlarmInfo {
+fn state_to_info(state: &InnerAlarmState, last_played: &LastPlayed) -> AlarmInfo {
     AlarmInfo {
         time: state.next_alarm.format("%Y-%m-%dT%H:%M:%S").to_string(),
-        enabled: state.enabled && state.last_played_alarm.map(|v| state.next_alarm > v).unwrap_or(true),
+        enabled: state.enabled
+            && last_played
+                .last_played_time
+                .map(|v| state.next_alarm > v)
+                .unwrap_or(true),
     }
 }
 
 #[post("/store", data = "<info>")]
-fn store_compat(info: Json<AlarmInfo>, state: &State<AlarmState>) -> Json<AlarmInfo> {
+async fn store_compat(info: Json<AlarmInfo>, state: &State<AlarmState>) -> Json<AlarmInfo> {
     let naive_datetime = NaiveDateTime::parse_from_str(&info.time, "%Y-%m-%dT%H:%M:%S%.f")
         .expect("Could not parse date");
-    let next_alarm = DateTime::<Utc>::from_utc(naive_datetime, chrono::Utc);
+    let next_alarm = DateTime::<Utc>::from_naive_utc_and_offset(naive_datetime, chrono::Utc);
     let new_state = {
-        let current_state = state.inner.lock().unwrap();
         InnerAlarmState {
             next_alarm,
-            last_played_alarm: current_state.last_played_alarm,
             enabled: info.enabled,
         }
     };
-    
-    store_inner(state, new_state);
+
+    store_inner(state, new_state).await;
     get_info(state)
 }
 
-#[put("/state/last_played_alarm", data = "<time>")]
-fn on_alarm_finished(time: Json<DateTime<Utc>>, state: &State<AlarmState>) -> Json<AlarmInfo> {
-    println!("Alarm finished at {time:?}");
-    {
-        let mut s = state.inner.lock().unwrap();
-        s.last_played_alarm = s.last_played_alarm.max(Some(*time));
-    }
-    get_info(state)
-}
+// #[put("/state/last_played_alarm", data = "<time>")]
+// fn on_alarm_finished(time: Json<DateTime<Utc>>, state: &State<AlarmState>) -> Json<AlarmInfo> {
+//     println!("Alarm finished at {time:?}");
+//     {
+//         let mut s = state.inner.blocking_lock();
+//         s.last_played_alarm = s.last_played_alarm.max(Some(*time));
+//     }
+//     get_info(state)
+// }
 
-fn store_inner(state: &AlarmState, new_state: InnerAlarmState) {
-    let mut state: std::sync::MutexGuard<InnerAlarmState> = state.inner.lock().unwrap();
-    let orig_state = state.clone();
-    *state = new_state;
-    let diff = *state != orig_state;
+async fn store_inner(state: &AlarmState, new_state: InnerAlarmState) {
+    state
+        .inner
+        .update(|state| {
+            let orig_state = state.clone();
+            *state = new_state;
+            let diff = *state != orig_state;
 
-    if diff {
-        if state.enabled {
-            println!(
-                "Set alarm to {} which is {} minutes into the future",
-                state.next_alarm,
-                state
-                    .next_alarm
-                    .signed_duration_since(Utc::now())
-                    .num_minutes()
-            );
-        } else {
-            println!("Disabled alarm");
-        }
-    }
-}
-
-fn sync_down(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
-    let client = reqwest::blocking::Client::new();
-    let res = client
-        .get(format!("{}/state", url))
-        .send()
-        .and_then(|x| x.error_for_status())
-        .and_then(|x| x.text())
-        .map_err(|e| format!("{:?}", e))?;
-    let new_state: InnerAlarmState = serde_json::from_str(&res).unwrap();
-
-    store_inner(alarm_state, new_state);
-    Ok(())
-}
-
-fn sync_up(alarm_state: &AlarmState, url: &'static str) -> Result<(), String> {
-    let client = reqwest::blocking::Client::new();
-    let json = {
-        serde_json::to_string(&*alarm_state.inner.lock().unwrap()).unwrap()
-    };
-    let res = client
-        .put(format!("{}/state", url))
-        .body(json)
-        .send()
-        .and_then(|x| x.error_for_status())
-        .and_then(|x| x.text())
-        .map_err(|e| format!("{:?}", e))?;
-    let new_state: InnerAlarmState = serde_json::from_str(&res).unwrap();
-
-    store_inner(alarm_state, new_state);
-    Ok(())
-}
-
-const RETRIES: u32 = 5;
-
-pub fn disable_alarm_and_sync(alarm_state: &AlarmState, trigger_time: DateTime<Utc>) -> Result<(), String> {
-    alarm_state.on_alarm_finished(trigger_time);
-    if let Some(url) = alarm_state.sync_url {
-        let client = reqwest::blocking::Client::new();
-
-        // Sometimes the server is not reachable, so we retry a few times
-        // DNS resolution fails or something. Maybe WIFI got obstructed?
-        println!("Disabling alarm on remote...");
-        let mut i = 0;
-        loop {
-            let json = serde_json::to_string(&trigger_time).unwrap();
-            // This endpoint will disable the alarm on the remote iff the "next alarm" time
-            // is the same as the one we have stored right now.
-            match client
-                .put(format!("{}/state/last_played_alarm", url))
-                .body(json)
-                .send()
-                .and_then(|x| x.error_for_status())
-                 {
-                Ok(_) => {
-                    return Ok(());
-                }
-                Err(e) if i < RETRIES => {
-                    i += 1;
-                    println!("Failed to sync: {:?}. Trying again... {i}/{RETRIES}", e);
-                    thread::sleep(Duration::from_secs_f64(2.0f64.powf(i as f64)));
-                }
-                Err(e) => {
-                    return Err(format!("{:?}", e));
+            if diff {
+                if state.enabled {
+                    info!(
+                        "Set alarm to {} which is {} minutes into the future",
+                        state.next_alarm,
+                        state
+                            .next_alarm
+                            .signed_duration_since(Utc::now())
+                            .num_minutes()
+                    );
+                } else {
+                    info!("Disabled alarm");
                 }
             }
-        }
-    } else {
-        Ok(())
-    }
+        })
+        .await;
 }
 
-fn start_sync_thread(alarm_state: AlarmState, url: &'static str) {
+#[cfg(feature = "motion")]
+fn monitor_sleep(state: Arc<Mutex<SleepMonitorState>>) {
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("accelerometer.csv")
+        .unwrap();
+
     loop {
-        if let Err(err) = sync_down(&alarm_state, url) {
-            println!("Sync failed {:?}", err);
-            thread::sleep(Duration::from_secs(60));
+        if !state.blocking_lock().sleep_monitor.is_present() {
+            // Don't collect as much data when the user is not in bed
+            thread::sleep(Duration::from_secs(1));
         }
 
-        let sleep_ms = if alarm_state.should_start_alarm().is_some() {
-            400
-        } else {
-            5000
+        // Take 10 samples every 100 ms and average them
+        const SAMPLES: usize = 10;
+        const PERIOD_MS: u64 = 10;
+        let mut samples = vec![];
+        for _ in 0..SAMPLES {
+            {
+                let mut s = state.blocking_lock();
+                let data = s.accelerometer.get_data().unwrap();
+                samples.push(data);
+            }
+            thread::sleep(Duration::from_millis(PERIOD_MS));
+        }
+        let mean = sleep_monitor::AccelerometerData::mean(&samples);
+        let alarm_is_playing = {
+            let mut s = state.blocking_lock();
+            s.sleep_monitor.push(mean.clone());
+            s.alarm_is_playing
         };
-        thread::sleep(Duration::from_millis(sleep_ms));
+        let time = Utc::now();
+        let line = format!(
+            "{},{},{},{},{},{},{},{},{},{}\n",
+            // YYYY-MM-DD HH:MM:SS.SSS
+            time.format("%Y-%m-%d %H:%M:%S%.3f"),
+            SAMPLES,
+            alarm_is_playing as u32,
+            mean.acc.0,
+            mean.acc.1,
+            mean.acc.2,
+            mean.gyro.0,
+            mean.gyro.1,
+            mean.gyro.2,
+            mean.temp,
+        );
+        file.write_all(line.as_bytes()).unwrap();
     }
 }
 
-#[launch]
-fn launch_rocket() -> _ {
-    let remote_server = if std::env::args().any(|x| x == "--remote-sync") {
-        Some("http://alarm.arongranberg.com")
-    } else {
-        None
+const MQTT_HOST: &str = "mqtt://arongranberg.com:1883";
+const MQTT_CLIENT_ID: &str = "alarm";
+const MQTT_USERNAME: &str = "wakeup_alarm";
+const MQTT_PASSWORD: &str = "xafzz25nomehasff";
+
+#[rocket::main]
+async fn main() -> Result<(), rocket::Error> {
+    env_logger::init();
+
+    #[cfg(feature = "motion")]
+    let acc = match sleep_monitor::Accelerometer::new() {
+        Ok(acc) => acc,
+        Err(e) => {
+            panic!("Failed to initialize accelerometer: {:?}", e);
+        }
     };
+
+    // let remote_server = if std::env::args().any(|x| x == "--remote-sync") {
+    //     Some("http://alarm.arongranberg.com")
+    // } else {
+    //     None
+    // };
+
+    let storage = SyncStorage::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_USERNAME, MQTT_PASSWORD).await;
+    println!("0");
+    let inner_state = storage
+        .add_container(InnerAlarmState {
+            next_alarm: Utc::now(),
+            enabled: false,
+        })
+        .await;
+    storage.add_container(TestSync { count: 0 }).await;
+
+    let last_played = storage
+        .add_container(LastPlayed {
+            last_played_time: None,
+        })
+        .await;
+
+    let is_playing = storage.add_container(false).await;
+    let is_user_in_bed = storage.add_container(false).await;
+
+    storage.wait_for_sync().await;
 
     let play_immediately = std::env::args().any(|x| x == "--play");
     let alarm_state = AlarmState {
-        inner: Arc::new(Mutex::new(InnerAlarmState {
-            next_alarm: Utc::now(),
-            last_played_alarm: None,
-            enabled: false,
+        storage,
+        inner: inner_state,
+        last_played,
+        is_playing,
+        is_user_in_bed: is_user_in_bed.clone(),
+        #[cfg(feature = "motion")]
+        sleep_monitor: Arc::new(Mutex::new(SleepMonitorState {
+            accelerometer: acc,
+            sleep_monitor: sleep_monitor::SleepMonitor::new(
+                Duration::from_secs(10 * 60),
+                is_user_in_bed,
+            ),
+            alarm_is_playing: false,
         })),
-        sync_url: remote_server,
+        // sync_url: remote_server,
     };
 
-    if let Some(url) = remote_server {
-        sync_down(&alarm_state, url).unwrap();
+    let r = rocket::build().manage(alarm_state.clone()).mount(
+        "/",
+        routes![
+            get_info,
+            get_info_compat,
+            store_compat,
+            // on_alarm_finished,
+            get_state,
+            put_state
+        ],
+    );
+    let rocket_task = tokio::spawn(r.launch());
+
+    #[cfg(feature = "motion")]
+    {
+        let sm = alarm_state.sleep_monitor.clone();
+        thread::spawn(move || monitor_sleep(sm));
     }
+
+    // if let Some(url) = remote_server {
+    //     sync_down(&alarm_state, url).unwrap();
+    // }
 
     if play_immediately {
-        let mut s = alarm_state.inner.lock().unwrap();
-        s.next_alarm = Utc::now();
-        s.enabled = true;
+        println!("Playing alarm immediately");
+        alarm_state
+            .inner
+            .update(|s| {
+                s.next_alarm = Utc::now();
+                s.enabled = true;
+            })
+            .await;
     }
 
-    if let Some(url) = remote_server {
-        sync_up(&alarm_state, url).unwrap();
-        let audio_alarm_state2 = alarm_state.clone();
-        thread::spawn(move || start_sync_thread(audio_alarm_state2, url));
-    }
+    // if let Some(url) = remote_server {
+    //     sync_up(&alarm_state).unwrap();
+    //     let audio_alarm_state2 = alarm_state.clone();
+    //     thread::spawn(move || start_sync_thread(audio_alarm_state2, url));
+    // }
 
     #[cfg(feature = "audio")]
-    if remote_server.is_some() || play_immediately {
+    {
         let audio_alarm_state = alarm_state.clone();
         thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
     }
 
-    rocket::build()
-        .manage(alarm_state)
-        .mount("/", routes![get_info, get_info_compat, store_compat, on_alarm_finished, get_state, put_state])
+    rocket_task.await.unwrap().unwrap();
+    Ok(())
 }
 
 // use synthrs::synthesizer::{ make_samples, quantize_samples };

@@ -2,33 +2,46 @@
 name = "alarm"
 version = "0.1.0"
 authors = ["Aron Granberg <aron.granberg@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 # rodio = { git = "https://github.com/RustAudio/rodio", rev = "3bc614f" }
 synthrs = { git = "https://github.com/gyng/synthrs", rev = "77e062f3e40304dd2c3611d70ece6a0e4eaf9750" }
-# rustfft = "3.0"
-rocket = { version = "0.5.0", features = ["json"] }
+rocket = { version = "0.5.1", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 thiserror = "1.0"
-# minihttp = { version = "0.1.9", features = [] }
-# curl = "0.4"
-# actix-web = { version="3.3", features=["rust-tls"] }
 serde_json = "1.0"
 # requests = "0.0"
 futures = "0.3"
-reqwest = { version = "0.12.4", features = ["rustls-tls", "blocking"], default-features=false }
+reqwest = { version = "0.12.4", features = [
+    "rustls-tls",
+    "blocking",
+], default-features = false }
 rodio = { version = "0.11.0", optional = true }
+mpu6050 = { version = "0.1.6", optional = true }
+i2cdev = { version = "0.6.1", optional = true }
+linux-embedded-hal = { version = "0.4", optional = true }
+symphonia = { version = "0.5", features = ["mp3"], optional = true }
+ws = { package = "rocket_ws", version = "0.1.0" }
+tokio = { version = "1.20", features = ["rt-multi-thread", "net", "time"] }
+sync_common = { path = "../../embedded/sync_common" }
+mqtt_sync = { path = "../../embedded/mqtt_sync", features = ["pc"] }
+env_logger = "0.11"
+log = "0"
 
 [features]
-audio = ["rodio"]
+audio = ["rodio", "symphonia"]
+motion = ["mpu6050", "i2cdev", "linux-embedded-hal"]
 
-# [patch.crates-io]
+[patch.crates-io]
+# Patch that adds support for embedded-hal 1.0
+mpu6050 = { git = "https://github.com/embedevices-rs/mpu6050.git", rev = "acd7120" }
+
 # cpal = { git = "https://github.com/RustAudio/cpal.git", rev = "2b31fe4" }
 
-[profile.release]
-panic = "abort"
+# [profile.release]
+# panic = "abort"

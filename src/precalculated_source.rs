@@ -47,7 +47,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_buffer_index < self.current_buffer.len() {
             self.current_buffer_index += 1;
-            return Some(self.current_buffer[self.current_buffer_index - 1]);
+            Some(self.current_buffer[self.current_buffer_index - 1])
         } else {
             if !self.current_buffer.is_empty() {
                 println!("Ran out of precalculated samples. Fetching dynamically instead.");
