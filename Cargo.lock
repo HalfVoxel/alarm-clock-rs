@@ -2757,6 +2757,7 @@ dependencies = [
 [[package]]
 name = "sync_common"
 version = "0.1.0"
+source = "git+https://github.com/HalfVoxel/sync_common.git#59bd8863dd8ed09e2aff92a5f66d805a45fbd10b"
 dependencies = [
  "serde",
 ]
