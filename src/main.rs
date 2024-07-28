@@ -3,7 +3,6 @@ use machineid_rs::HWIDComponent;
 use rocket::serde::json::Json;
 use rocket::State;
 use serde::{Deserialize, Serialize};
-use sync_common::TestSync;
 
 use rocket::tokio::sync::Mutex;
 use std::fmt::Debug;
@@ -42,7 +41,7 @@ pub struct AlarmState {
     is_user_in_bed: Arc<SyncedContainer<bool>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash)]
 pub struct LastPlayed {
     last_played_time: Option<DateTime<Utc>>,
 }
@@ -95,7 +94,7 @@ impl AlarmState {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 struct InnerAlarmState {
     next_alarm: DateTime<Utc>,
     enabled: bool,
@@ -297,10 +296,6 @@ async fn main() -> Result<(), rocket::Error> {
                 enabled: false,
             },
         )
-        .await
-        .unwrap();
-    storage
-        .add_container("test", TestSync { count: 0 })
         .await
         .unwrap();
 
