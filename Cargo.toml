@@ -26,7 +26,6 @@ mpu6050 = { version = "0.1.6", optional = true }
 i2cdev = { version = "0.6.1", optional = true }
 linux-embedded-hal = { version = "0.4", optional = true }
 symphonia = { version = "0.5", features = ["mp3"], optional = true }
-ws = { package = "rocket_ws", version = "0.1.0" }
 tokio = { version = "1.39", features = ["rt-multi-thread", "net", "time"] }
 sync_common = { git = "https://github.com/HalfVoxel/sync_common.git" }
 brevduva = { git = "https://github.com/HalfVoxel/brevduva.git", features = [
