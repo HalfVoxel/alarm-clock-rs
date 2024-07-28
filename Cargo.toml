@@ -34,6 +34,7 @@ brevduva = { git = "https://github.com/HalfVoxel/brevduva.git", features = [
 ] }
 env_logger = "0.11"
 log = "0"
+machineid-rs = "1.2.4"
 
 [features]
 audio = ["rodio", "symphonia"]

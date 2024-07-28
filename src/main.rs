@@ -1,4 +1,5 @@
 use brevduva::{SyncStorage, SyncedContainer};
+use machineid_rs::HWIDComponent;
 use rocket::serde::json::Json;
 use rocket::State;
 use serde::{Deserialize, Serialize};
@@ -279,7 +280,18 @@ async fn main() -> Result<(), rocket::Error> {
     //     None
     // };
 
-    let storage = SyncStorage::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_USERNAME, MQTT_PASSWORD).await;
+    let machine_id = machineid_rs::IdBuilder::new(machineid_rs::Encryption::SHA256)
+        .add_component(HWIDComponent::SystemID)
+        .build("somekey")
+        .unwrap();
+
+    let storage = SyncStorage::new(
+        &format!("{MQTT_CLIENT_ID} {machine_id}"),
+        MQTT_HOST,
+        MQTT_USERNAME,
+        MQTT_PASSWORD,
+    )
+    .await;
     println!("0");
     let inner_state = storage
         .add_container(
