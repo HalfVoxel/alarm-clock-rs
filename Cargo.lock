@@ -272,7 +272,7 @@ dependencies = [
 [[package]]
 name = "brevduva"
 version = "0.1.0"
-source = "git+https://github.com/HalfVoxel/brevduva.git#4a48892ddcb77d9b49278eff406580fc53779816"
+source = "git+https://github.com/HalfVoxel/brevduva.git#bd507904b950a94791508ba53f0c3835a9cd01e5"
 dependencies = [
  "edge-mqtt",
  "embedded-svc",

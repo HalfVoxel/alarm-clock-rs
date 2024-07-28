@@ -282,21 +282,38 @@ async fn main() -> Result<(), rocket::Error> {
     let storage = SyncStorage::new(MQTT_CLIENT_ID, MQTT_HOST, MQTT_USERNAME, MQTT_PASSWORD).await;
     println!("0");
     let inner_state = storage
-        .add_container(InnerAlarmState {
-            next_alarm: Utc::now(),
-            enabled: false,
-        })
-        .await;
-    storage.add_container(TestSync { count: 0 }).await;
+        .add_container(
+            "alarm/state",
+            InnerAlarmState {
+                next_alarm: Utc::now(),
+                enabled: false,
+            },
+        )
+        .await
+        .unwrap();
+    storage
+        .add_container("test", TestSync { count: 0 })
+        .await
+        .unwrap();
 
     let last_played = storage
-        .add_container(LastPlayed {
-            last_played_time: None,
-        })
-        .await;
+        .add_container(
+            "alarm/last_played",
+            LastPlayed {
+                last_played_time: None,
+            },
+        )
+        .await
+        .unwrap();
 
-    let is_playing = storage.add_container(false).await;
-    let is_user_in_bed = storage.add_container(false).await;
+    let is_playing = storage
+        .add_container("alarm/is_playing", false)
+        .await
+        .unwrap();
+    let is_user_in_bed = storage
+        .add_container("alarm/is_user_in_bed", false)
+        .await
+        .unwrap();
 
     storage.wait_for_sync().await;
 
@@ -365,7 +382,9 @@ async fn main() -> Result<(), rocket::Error> {
         thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
     }
 
+    println!("Rocket??");
     rocket_task.await.unwrap().unwrap();
+    println!("Rocket!");
     Ok(())
 }
 
