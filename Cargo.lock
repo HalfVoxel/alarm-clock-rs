@@ -272,13 +272,14 @@ dependencies = [
 [[package]]
 name = "brevduva"
 version = "0.1.0"
-source = "git+https://github.com/HalfVoxel/brevduva.git#888c13ff56baa9f3d98920ee1a69d8ab6ba59fda"
+source = "git+https://github.com/HalfVoxel/brevduva.git#4a48892ddcb77d9b49278eff406580fc53779816"
 dependencies = [
  "edge-mqtt",
  "embedded-svc",
  "log",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 
