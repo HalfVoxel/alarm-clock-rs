@@ -29,7 +29,9 @@ symphonia = { version = "0.5", features = ["mp3"], optional = true }
 ws = { package = "rocket_ws", version = "0.1.0" }
 tokio = { version = "1.20", features = ["rt-multi-thread", "net", "time"] }
 sync_common = { path = "../../embedded/sync_common" }
-mqtt_sync = { path = "../../embedded/mqtt_sync", features = ["pc"] }
+brevduva = { git = "https://github.com/HalfVoxel/brevduva.git", features = [
+    "pc",
+] }
 env_logger = "0.11"
 log = "0"
 

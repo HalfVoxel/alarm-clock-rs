@@ -1,3 +1,4 @@
+use brevduva::SyncedContainer;
 use linux_embedded_hal::{Delay, I2CError, I2cdev};
 use mpu6050::*;
 use std::{
@@ -72,14 +73,11 @@ pub struct SleepMonitor {
     times: Vec<Instant>,
     rolling_delta_magn: Vec<f32>,
     max_memory: Duration,
-    is_user_in_bed: Arc<mqtt_sync::SyncedContainer<bool>>,
+    is_user_in_bed: Arc<SyncedContainer<bool>>,
 }
 
 impl SleepMonitor {
-    pub fn new(
-        max_memory: Duration,
-        is_user_in_bed: Arc<mqtt_sync::SyncedContainer<bool>>,
-    ) -> Self {
+    pub fn new(max_memory: Duration, is_user_in_bed: Arc<SyncedContainer<bool>>) -> Self {
         SleepMonitor {
             rolling_data: vec![],
             times: vec![],
