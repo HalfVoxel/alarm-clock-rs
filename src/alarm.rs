@@ -295,7 +295,7 @@ fn random_alarm_sound(root_dir: &Path) -> Result<PathBuf, AlarmSoundError> {
     }
 }
 
-pub fn start_alarm_thread(alarm_state: AlarmState) {
+pub async fn start_alarm_thread(alarm_state: AlarmState) {
     info!("Starting alarm thread");
     loop {
         #[allow(unused_mut)]
@@ -307,7 +307,8 @@ pub fn start_alarm_thread(alarm_state: AlarmState) {
         if let Some(t) = alarm_state.should_start_alarm_soon(DateDuration::minutes(30)) {
             if alarm_state
                 .sleep_monitor
-                .blocking_lock()
+                .lock()
+                .await
                 .sleep_monitor
                 .is_significant_movement()
             {
@@ -322,24 +323,32 @@ pub fn start_alarm_thread(alarm_state: AlarmState) {
                     info!("Playing {}", path.to_str().unwrap());
                     #[cfg(feature = "motion")]
                     {
-                        alarm_state.sleep_monitor.blocking_lock().alarm_is_playing = true;
+                        alarm_state.sleep_monitor.lock().await.alarm_is_playing = true;
                     }
-                    futures::executor::block_on(alarm_state.is_playing.set(true));
-                    play(&path, trigger_time, &alarm_state);
+                    alarm_state.is_playing.set(true).await;
+                    {
+                        let alarm_state = alarm_state.clone();
+                        tokio::task::spawn_blocking(move || {
+                            // TODO: Make into async function
+                            play(&path, trigger_time, &alarm_state);
+                        })
+                        .await
+                        .unwrap();
+                    }
                     #[cfg(feature = "motion")]
                     {
-                        alarm_state.sleep_monitor.blocking_lock().alarm_is_playing = false;
+                        alarm_state.sleep_monitor.lock().await.alarm_is_playing = false;
                     }
-                    futures::executor::block_on(alarm_state.is_playing.set(false));
+                    alarm_state.is_playing.set(false).await;
                 }
                 Err(e) => {
                     error!("{}", e);
-                    futures::executor::block_on(alarm_state.on_alarm_finished(trigger_time));
+                    alarm_state.on_alarm_finished(trigger_time).await;
                 }
             }
             info!("Alarm finished...");
         }
 
-        thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }

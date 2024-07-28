@@ -362,8 +362,7 @@ async fn main() -> Result<(), rocket::Error> {
 
     #[cfg(feature = "audio")]
     {
-        let audio_alarm_state = alarm_state.clone();
-        thread::spawn(move || alarm::start_alarm_thread(audio_alarm_state));
+        tokio::spawn(alarm::start_alarm_thread(alarm_state.clone()));
     }
 
     rocket::build()
