@@ -40,6 +40,16 @@ impl AccelerometerData {
     }
 }
 
+impl Default for AccelerometerData {
+    fn default() -> Self {
+        AccelerometerData {
+            acc: (0.0, 0.0, 0.0),
+            gyro: (0.0, 0.0, 0.0),
+            temp: 20.0,
+        }
+    }
+}
+
 impl Accelerometer {
     pub fn new() -> Result<Self, Mpu6050Error<I2CError>> {
         let i2c = I2cdev::new("/dev/i2c-1").map_err(|e| Mpu6050Error::I2c(I2CError::from(e)))?;

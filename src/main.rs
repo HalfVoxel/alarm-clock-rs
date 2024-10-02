@@ -51,6 +51,7 @@ struct SleepMonitorState {
     sleep_monitor: sleep_monitor::SleepMonitor,
     accelerometer: sleep_monitor::Accelerometer,
     alarm_is_playing: bool,
+    error_status: Arc<SyncedContainer<Option<String>>>,
 }
 
 impl AlarmState {
@@ -209,6 +210,8 @@ async fn store_inner(state: &AlarmState, new_state: InnerAlarmState) {
 
 #[cfg(feature = "motion")]
 fn monitor_sleep(state: Arc<Mutex<SleepMonitorState>>) {
+    use rocket::data;
+
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
@@ -226,12 +229,33 @@ fn monitor_sleep(state: Arc<Mutex<SleepMonitorState>>) {
         const PERIOD_MS: u64 = 10;
         let mut samples = vec![];
         for _ in 0..SAMPLES {
-            {
+            let sample = {
                 let mut s = state.blocking_lock();
-                let data = s.accelerometer.get_data().unwrap();
-                samples.push(data);
+                match s.accelerometer.get_data() {
+                    Ok(data) => {
+                        futures::executor::block_on(s.error_status.set(None));
+                        Ok(data)
+                    }
+                    Err(e) => {
+                        error!("Failed to get accelerometer data: {:?}", e);
+                        futures::executor::block_on(s.error_status.set(Some(format!("{:?}", e))));
+                        Err(e)
+                    }
+                }
+            };
+
+            match sample {
+                Ok(data) => {
+                    samples.push(data);
+                    thread::sleep(Duration::from_millis(PERIOD_MS));
+                }
+                Err(_) => {
+                    thread::sleep(Duration::from_millis(2000));
+                }
             }
-            thread::sleep(Duration::from_millis(PERIOD_MS));
+        }
+        if samples.is_empty() {
+            samples.push(sleep_monitor::AccelerometerData::default());
         }
         let mean = sleep_monitor::AccelerometerData::mean(&samples);
         let alarm_is_playing = {
@@ -317,6 +341,10 @@ async fn main() -> Result<(), rocket::Error> {
         .add_container("alarm/is_user_in_bed", false)
         .await
         .unwrap();
+    let sleep_monitor_err = storage
+        .add_container("alarm/sleep_monitor_error", None::<String>)
+        .await
+        .unwrap();
 
     storage.wait_for_sync().await;
 
@@ -331,10 +359,11 @@ async fn main() -> Result<(), rocket::Error> {
         sleep_monitor: Arc::new(Mutex::new(SleepMonitorState {
             accelerometer: acc,
             sleep_monitor: sleep_monitor::SleepMonitor::new(
-                Duration::from_secs(10 * 60),
+                Duration::from_secs(18 * 60),
                 is_user_in_bed,
             ),
             alarm_is_playing: false,
+            error_status: sleep_monitor_err,
         })),
     };
 
