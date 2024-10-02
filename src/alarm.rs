@@ -174,15 +174,19 @@ fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
     );
 
     let sine = rodio::source::SineWave::new(30).amplify(0.7);
-    let sources: Vec<Box<dyn rodio::source::Source<Item = f32> + Send>> = vec![
-        Box::new(
+    let mut sources: Vec<Box<dyn rodio::source::Source<Item = f32> + Send>> = vec![];
+
+    let speaker_has_standby_mode = false;
+    if speaker_has_standby_mode {
+        sources.push(Box::new(
             // Play sine wave for a few seconds to make the speakers wake up
             sine.take_duration(Duration::from_millis(5000))
                 // Fade in sine wave over one second to avoid speaker pop
                 .fade_in(Duration::from_millis(1000)),
-        ),
-        Box::new(source),
-    ];
+        ))
+    }
+
+    sources.push(Box::new(source));
 
     let source = rodio::source::from_iter(sources);
 
