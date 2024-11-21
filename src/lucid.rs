@@ -218,8 +218,7 @@ pub async fn start_lucid_effects(
     ));
 
     let minimum_sleeping_time = Duration::from_secs(60 * 90);
-    // let period_secs = 60.0 * 60.0;
-    let period_secs = 1.0 * 1.0;
+    let period_secs = 60.0 * 60.0;
     let mut rng = rand::rngs::StdRng::from_entropy();
 
     loop {
