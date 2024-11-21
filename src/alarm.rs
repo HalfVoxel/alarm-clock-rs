@@ -16,21 +16,25 @@ use symphonia::core::audio::SampleBuffer;
 use thiserror::Error;
 use time::{Duration, Instant};
 
-fn frquency_cutoff_lp(t: f32) -> f32 {
+fn frequency_cutoff_lowpass(t: f32) -> f32 {
     let clamped_t = (t - 10.0).max(0.0);
     100000.0f32.min(800.0 + clamped_t.powf(2.5) * 1.0)
 }
 
-fn volume(t: f32) -> f32 {
-    1.0f32.min(0.0 + 0.007 * t + 0.0f32.max(t - 5.0) * 0.013)
+pub fn fadein_slow(t: f32) -> f32 {
+    1.0f32.min(0.007 * t + 0.0f32.max(t - 5.0) * 0.013)
 }
 
-fn smoothstep(x: f32) -> f32 {
+pub fn smoothstep(x: f32) -> f32 {
     3.0 * x.powi(2) - 2.0 * x.powi(3)
 }
 
-fn fadeout(t: f32, duration: f32) -> f32 {
-    smoothstep((1.0 - (t / duration)).max(0.0))
+pub fn fadein(t: f32, duration: f32) -> f32 {
+    smoothstep((t.max(0.0) / duration).min(1.0))
+}
+
+pub fn fadeout(t: f32, duration: f32) -> f32 {
+    smoothstep((1.0 - (t.max(0.0) / duration)).max(0.0))
 }
 
 /// Decode Mp3 using symphonia.
@@ -151,33 +155,36 @@ fn decode_mp3(path: &Path) -> rodio::buffer::SamplesBuffer<f32> {
         }
     }
 
+    println!("Decoded {} samples", all_samples.len());
+
     rodio::buffer::SamplesBuffer::new(2, sample_rate, all_samples)
 }
 
-fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
-    // let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
+pub fn play_audio(path: &Path, mut vol: impl FnMut(f32) -> Option<f32>, lowpass: bool) {
     let device = rodio::default_output_device().unwrap();
 
-    // let sink = Sink::try_new(&handle).unwrap();
     let sink = Sink::new(&device);
 
     // Add a dummy source of the sake of the example.
-    let file = File::open(path).unwrap();
-    println!("{}", file.metadata().unwrap().len());
     let source_samples = decode_mp3(path);
-    // let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
-    // Source::
+    let total_duration = source_samples.total_duration();
+
     let (source, controller) = dynamic_filter(
         source_samples,
-        // source.convert_samples::<f32>(),
-        Box::new(|t| frquency_cutoff_lp(t as f32) as f64),
+        Box::new(move |t| {
+            if lowpass {
+                frequency_cutoff_lowpass(t as f32) as f64
+            } else {
+                100_000.0
+            }
+        }),
     );
 
-    let sine = rodio::source::SineWave::new(30).amplify(0.7);
     let mut sources: Vec<Box<dyn rodio::source::Source<Item = f32> + Send>> = vec![];
 
     let speaker_has_standby_mode = false;
     if speaker_has_standby_mode {
+        let sine = rodio::source::SineWave::new(30).amplify(0.7);
         sources.push(Box::new(
             // Play sine wave for a few seconds to make the speakers wake up
             sine.take_duration(Duration::from_millis(5000))
@@ -190,99 +197,110 @@ fn play(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
 
     let source = rodio::source::from_iter(sources);
 
-    // let source = PrecalculatedSource::new(source, 44000*300);
     sink.append(source);
 
-    let alarm_timeout = 5.0 * 60.0;
-
     let t0 = Instant::now();
-    #[allow(unused_assignments)]
-    let mut manually_cancelled = false;
     loop {
         let t = Instant::now().duration_since(t0).as_secs_f32();
-        if t > alarm_timeout {
-            break;
-        }
-        if !alarm_state.is_trigger_time(trigger_time) {
-            manually_cancelled = true;
-            break;
+        if let Some(total_duration) = total_duration {
+            if t > total_duration.as_secs_f32() {
+                break;
+            }
         }
 
-        // let freq = frquency_cutoff_lp(t);
-        // controller.set_lowpass(freq as f64);
-        controller.set_volume(volume(t));
-        // sink.set_volume(t.min(1.0));
-        thread::sleep(Duration::from_millis(40));
-    }
-
-    let t1 = Instant::now();
-    let fadeout_duration = 5.0;
-    loop {
-        let t = Instant::now().duration_since(t0).as_secs_f32();
-        let t_fadeout = Instant::now().duration_since(t1).as_secs_f32();
-        if t_fadeout >= fadeout_duration {
+        if let Some(v) = vol(t) {
+            controller.set_volume(v);
+            thread::sleep(Duration::from_millis(40));
+        } else {
             break;
         }
-        // let freq = frquency_cutoff_lp(t);
-        controller.set_volume(volume(t) * fadeout(t_fadeout, fadeout_duration));
-        // controller.set_lowpass(freq as f64);
-        thread::sleep(Duration::from_millis(40));
     }
 
     controller.set_volume(0.0);
     sink.stop();
+}
+
+#[cfg(feature = "motion")]
+async fn snooze(alarm_state: AlarmState, trigger_time: DateTime<Utc>) {
+    // In a few minutes, check if the user is still in bed, and if so, re-enable the alarm
+    tokio::time::sleep(time::Duration::from_secs(15 * 60)).await;
+    let prev_state = alarm_state.inner.get().clone().unwrap();
+    if prev_state.enabled
+        && prev_state.next_alarm == trigger_time
+        && alarm_state
+            .sleep_monitor
+            .lock()
+            .await
+            .sleep_monitor
+            .is_present()
+    {
+        alarm_state
+            .last_played
+            .update(|s| {
+                // We must do a minimum here, because if the alarm started early because of motion, then this could otherwise fail to play the alarm again, because we
+                // set the 'last played time' to trigger time, which might be after the alarm retry time (now).
+                s.last_played_time = s
+                    .last_played_time
+                    .min(Some(Utc::now() - DateDuration::seconds(1)));
+            })
+            .await;
+        alarm_state
+            .inner
+            .update(|s| {
+                s.enabled = true;
+                s.next_alarm = Utc::now();
+            })
+            .await;
+    }
+}
+
+fn play_alarm(path: &Path, trigger_time: DateTime<Utc>, alarm_state: &AlarmState) {
+    let alarm_timeout = 5.0 * 60.0;
+    let mut fadeout_start = None;
+    let fadeout_duration = 5.0;
+
+    play_audio(
+        path,
+        |t| {
+            let v = fadein_slow(t);
+            if let Some(fadeout_start) = fadeout_start {
+                let t_fadeout = t - fadeout_start;
+                if t_fadeout > fadeout_duration {
+                    return None;
+                }
+                Some(v * fadeout(t_fadeout, fadeout_duration))
+            } else {
+                if t > alarm_timeout || !alarm_state.is_trigger_time(trigger_time) {
+                    fadeout_start = Some(t);
+                }
+                Some(v)
+            }
+        },
+        true,
+    );
+
+    let manually_cancelled = !alarm_state.is_trigger_time(trigger_time);
 
     futures::executor::block_on(alarm_state.on_alarm_finished(trigger_time));
 
     #[cfg(feature = "motion")]
     {
-        let alarm_state = alarm_state.clone();
-        tokio::spawn(async move {
-            if !manually_cancelled {
-                // In a few minutes, check if the user is still in bed, and if so, re-enable the alarm
-                tokio::time::sleep(time::Duration::from_secs(15 * 60)).await;
-                let prev_state = alarm_state.inner.get().clone().unwrap();
-                if prev_state.enabled
-                    && prev_state.next_alarm == trigger_time
-                    && alarm_state
-                        .sleep_monitor
-                        .lock()
-                        .await
-                        .sleep_monitor
-                        .is_present()
-                {
-                    alarm_state
-                        .last_played
-                        .update(|s| {
-                            // We must do a minimum here, because if the alarm started early because of motion, then this could otherwise fail to play the alarm again, because we
-                            // set the 'last played time' to trigger time, which might be after the alarm retry time (now).
-                            s.last_played_time = s
-                                .last_played_time
-                                .min(Some(Utc::now() - DateDuration::seconds(1)));
-                        })
-                        .await;
-                    alarm_state
-                        .inner
-                        .update(|s| {
-                            s.enabled = true;
-                            s.next_alarm = Utc::now();
-                        })
-                        .await;
-                }
-            }
-        });
+        if !manually_cancelled {
+            let alarm_state = alarm_state.clone();
+            tokio::spawn(snooze(alarm_state, trigger_time));
+        }
     }
 }
 
 #[derive(Error, Debug)]
-enum AlarmSoundError {
+pub enum AlarmSoundError {
     #[error("Could not read directory `{0}`: {1}")]
     CouldNotReadDir(PathBuf, std::io::Error),
     #[error("There were no sound files in the sound directory")]
     NoFiles,
 }
 
-fn random_alarm_sound(root_dir: &Path) -> Result<PathBuf, AlarmSoundError> {
+pub fn random_alarm_sound(root_dir: &Path) -> Result<PathBuf, AlarmSoundError> {
     let valid_extensions = ["mp3", "ogg", "flac", "wav"];
     match root_dir.read_dir() {
         Ok(iter) => iter
@@ -334,7 +352,7 @@ pub async fn start_alarm_thread(alarm_state: AlarmState) {
                         let alarm_state = alarm_state.clone();
                         tokio::task::spawn_blocking(move || {
                             // TODO: Make into async function
-                            play(&path, trigger_time, &alarm_state);
+                            play_alarm(&path, trigger_time, &alarm_state);
                         })
                         .await
                         .unwrap();

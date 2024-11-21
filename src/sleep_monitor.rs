@@ -84,16 +84,22 @@ pub struct SleepMonitor {
     rolling_delta_magn: Vec<f32>,
     max_memory: Duration,
     is_user_in_bed: Arc<SyncedContainer<bool>>,
+    is_significant_movement_in_bed: Arc<SyncedContainer<bool>>,
 }
 
 impl SleepMonitor {
-    pub fn new(max_memory: Duration, is_user_in_bed: Arc<SyncedContainer<bool>>) -> Self {
+    pub fn new(
+        max_memory: Duration,
+        is_user_in_bed: Arc<SyncedContainer<bool>>,
+        is_significant_movement_in_bed: Arc<SyncedContainer<bool>>,
+    ) -> Self {
         SleepMonitor {
             rolling_data: vec![],
             times: vec![],
             rolling_delta_magn: vec![],
             max_memory,
             is_user_in_bed,
+            is_significant_movement_in_bed,
         }
     }
 
@@ -122,6 +128,9 @@ impl SleepMonitor {
 
         futures::executor::block_on(async {
             self.is_user_in_bed.set(self.is_present()).await;
+            self.is_significant_movement_in_bed
+                .set(self.is_significant_movement())
+                .await;
         });
     }
 

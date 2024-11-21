@@ -22,6 +22,7 @@ mod alarm;
 #[cfg(feature = "audio")]
 mod precalculated_source;
 
+pub mod lucid;
 #[cfg(feature = "motion")]
 mod sleep_monitor;
 
@@ -341,14 +342,29 @@ async fn main() -> Result<(), rocket::Error> {
         .add_container("alarm/is_user_in_bed", false)
         .await
         .unwrap();
+    let is_significant_movement_in_bed = storage
+        .add_container("alarm/is_significant_movement_in_bed", false)
+        .await
+        .unwrap();
     let sleep_monitor_err = storage
         .add_container("alarm/sleep_monitor_error", None::<String>)
+        .await
+        .unwrap();
+
+    let lucid_mucic_volume = storage
+        .add_container("alarm/lucid_music_volume", 30)
+        .await
+        .unwrap();
+    let lucid_sfx_volume = storage
+        .add_container("alarm/lucid_sfx_volume", 50)
         .await
         .unwrap();
 
     storage.wait_for_sync().await;
 
     let play_immediately = std::env::args().any(|x| x == "--play");
+    let play_lucid_immediately = std::env::args().any(|x| x == "--play-lucid");
+
     let alarm_state = AlarmState {
         storage,
         inner: inner_state,
@@ -360,7 +376,8 @@ async fn main() -> Result<(), rocket::Error> {
             accelerometer: acc,
             sleep_monitor: sleep_monitor::SleepMonitor::new(
                 Duration::from_secs(18 * 60),
-                is_user_in_bed,
+                is_user_in_bed.clone(),
+                is_significant_movement_in_bed.clone(),
             ),
             alarm_is_playing: false,
             error_status: sleep_monitor_err,
@@ -387,6 +404,15 @@ async fn main() -> Result<(), rocket::Error> {
     #[cfg(feature = "audio")]
     {
         tokio::spawn(alarm::start_alarm_thread(alarm_state.clone()));
+
+        tokio::spawn(lucid::start_lucid_effects(
+            alarm_state.clone(),
+            play_lucid_immediately,
+            lucid_mucic_volume,
+            lucid_sfx_volume,
+            is_user_in_bed.clone(),
+            is_significant_movement_in_bed.clone(),
+        ));
     }
 
     rocket::build()
