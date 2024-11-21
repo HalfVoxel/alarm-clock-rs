@@ -4,12 +4,9 @@ use rocket::serde::json::Json;
 use rocket::State;
 use serde::{Deserialize, Serialize};
 
-use rocket::tokio::sync::Mutex;
 use std::fmt::Debug;
-use std::io::Write;
-use std::{sync::Arc, thread, time};
+use std::sync::Arc;
 
-use time::Duration;
 
 use chrono::{DateTime, Utc};
 use chrono::{Duration as DateDuration, NaiveDateTime};

@@ -8,7 +8,7 @@ use std::{
 };
 
 use brevduva::SyncedContainer;
-use chrono::{TimeDelta, Utc};
+use chrono::TimeDelta;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{

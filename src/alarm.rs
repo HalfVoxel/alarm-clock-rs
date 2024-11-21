@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration as DateDuration, Utc};
+use chrono::{DateTime, Utc};
 use log::info;
 use rodio::{Sink, Source};
 use symphonia::core::codecs::DecoderOptions;
@@ -6,7 +6,7 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-use std::{ffi::OsStr, fs::File, thread, time};
+use std::{ffi::OsStr, thread, time};
 use std::{path::Path, path::PathBuf};
 
 use crate::filtered_source::dynamic_filter;
