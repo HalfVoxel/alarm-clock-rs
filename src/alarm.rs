@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use log::info;
 use rodio::{Sink, Source};
 use symphonia::core::codecs::DecoderOptions;
@@ -223,6 +223,8 @@ pub fn play_audio(path: &Path, mut vol: impl FnMut(f32) -> Option<f32>, lowpass:
 #[cfg(feature = "motion")]
 async fn snooze(alarm_state: AlarmState, trigger_time: DateTime<Utc>) {
     // In a few minutes, check if the user is still in bed, and if so, re-enable the alarm
+
+    use chrono::TimeDelta;
     tokio::time::sleep(time::Duration::from_secs(15 * 60)).await;
     let prev_state = alarm_state.inner.get().clone().unwrap();
     if prev_state.enabled
@@ -241,7 +243,7 @@ async fn snooze(alarm_state: AlarmState, trigger_time: DateTime<Utc>) {
                 // set the 'last played time' to trigger time, which might be after the alarm retry time (now).
                 s.last_played_time = s
                     .last_played_time
-                    .min(Some(Utc::now() - DateDuration::seconds(1)));
+                    .min(Some(Utc::now() - TimeDelta::seconds(1)));
             })
             .await;
         alarm_state
@@ -326,7 +328,7 @@ pub async fn start_alarm_thread(alarm_state: AlarmState) {
         // If the alarm should start soon, and there is significant movement, start the alarm.
         // Movement may indicate REM sleep, and it is desirable to wake up the user during REM sleep.
         #[cfg(feature = "motion")]
-        if let Some(t) = alarm_state.should_start_alarm_soon(DateDuration::minutes(30)) {
+        if let Some(t) = alarm_state.should_start_alarm_soon(TimeDelta::minutes(30)) {
             if alarm_state
                 .sleep_monitor
                 .lock()
